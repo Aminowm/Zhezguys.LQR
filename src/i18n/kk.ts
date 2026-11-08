@@ -330,4 +330,5 @@ export const kk: Partial<Dict> = {
   "auth.createTeamBtn": "Команда құру",
   "robot.builderTitle": "Робот құрастырушы",
   "robot.advanced": "Порттар, мотор бағыттары және нақты әсерлер",
+  "table.numbers": "Миссия нөмірлері",
 };

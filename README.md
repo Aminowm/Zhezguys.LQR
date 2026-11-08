@@ -43,7 +43,7 @@ Turn it on once: repository **Settings → Pages → Source: GitHub Actions**.
 
 ## BIOGLOW mat and missions
 
-The competition table is 2362 × 1143 mm. The BIOGLOW (Founders Edition) mat is smaller: the official *Wireframe & Path Diagram* uses 20 cm squares, 10 across, so the mat is about 2000 × 1139 mm. The site places it at real size against the bottom (team-side) wall, centred left to right. All of this is set by `MAT` in [`src/field/bioglow.ts`](src/field/bioglow.ts); if your measured mat differs, change those numbers.
+The competition table is 2362 × 1143 mm. The BIOGLOW (Founders Edition) mat is smaller: the official *Wireframe & Path Diagram* uses 20 cm squares, 10 across, so the mat is about 2000 × 1140 mm. The site places it at real size against the bottom (team-side) wall, centred left to right. All of this is set by `MAT` in [`src/field/bioglow.ts`](src/field/bioglow.ts); if your measured mat differs, change those numbers.
 
 - `public/mats/bioglow.jpg` is the full mat. It is a cleaned-up copy of a small screenshot, so replace it with a high-resolution export of the official mat when you have one (keep the same name).
 - `public/mats/bioglow-wireframe.png` is the "Missions" card, cropped from FIRST's wireframe PDF.

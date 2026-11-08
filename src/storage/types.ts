@@ -56,6 +56,8 @@ export interface Program {
 export interface Plan {
   cardMode: CardMode;
   showGrid: boolean;
+  /** red mission numbers on the Missions card (off = exactly FIRST's wireframe) */
+  showMissionNumbers?: boolean;
   items: PlanItem[];
   missionOverrides: Record<string, { x: number; y: number }>;
 }

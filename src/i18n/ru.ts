@@ -330,4 +330,5 @@ export const ru: Partial<Dict> = {
   "auth.createTeamBtn": "Создать команду",
   "robot.builderTitle": "Конструктор робота",
   "robot.advanced": "Порты, направления моторов и реальные эффекты",
+  "table.numbers": "Номера миссий",
 };

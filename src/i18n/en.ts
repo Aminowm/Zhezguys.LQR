@@ -330,6 +330,7 @@ export const en = {
   "auth.createTeamBtn": "Create team",
   "robot.builderTitle": "Robot builder",
   "robot.advanced": "Ports, motor directions and real-world effects",
+  "table.numbers": "Mission numbers",
 };
 
 export type Dict = typeof en;

@@ -2,7 +2,7 @@
 //
 // The competition table is 2362 × 1143 mm (inside the walls). The BIOGLOW
 // mat is smaller: FIRST's "Wireframe & Path Diagram" uses a 20 cm grid that
-// is 10 squares wide, i.e. ≈ 2000 × 1139 mm. The mat lies against the south
+// is 10 squares wide, i.e. ≈ 2000 × 1140 mm. The mat lies against the south
 // (bottom, team-side) wall and is centred left–right.
 //
 // All numbers are table millimetres, origin = top-left inner corner of the
@@ -13,7 +13,7 @@ export const TABLE_W = 2362;
 export const TABLE_H = 1143;
 export const WALL = 38; // drawn wall thickness, mm
 
-export const MAT = { w: 2000, h: 1139, x: (2362 - 2000) / 2, y: 1143 - 1139 };
+export const MAT = { w: 2000, h: 1140, x: (2362 - 2000) / 2, y: 1143 - 1140 };
 
 /** Full colour card (public/mats). */
 export const MAT_IMAGE = "mats/bioglow.jpg";

@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from "motion/react";
 import {
   MousePointer2, Pencil, MoveUpRight, Route, Type, Bot, Square, Eraser, Undo2, Redo2, Grid3x3, ZoomIn, ZoomOut, Maximize,
   Plus, Play, Pause, RotateCcw, PanelRightClose, PanelRightOpen, Trash2, Eye, EyeOff, Wand2, Loader2, AlertTriangle,
-  ClipboardList, Code2, Flag, CheckCircle2, CloudOff,
+  ClipboardList, Code2, Flag, CheckCircle2, CloudOff, Hash,
 } from "lucide-react";
 import { useApp } from "../state/app";
 import { useT, DictKey } from "../i18n";
@@ -269,6 +269,16 @@ export default function TablePage() {
           {modeBtn("full", "table.modeFull")}
           {modeBtn("missions", "table.modeMissions")}
         </div>
+        {ws.plan.cardMode === "missions" && (
+          <button
+            className="btn sm"
+            aria-pressed={!!ws.plan.showMissionNumbers}
+            onClick={() => update((w) => ({ ...w, plan: { ...w.plan, showMissionNumbers: !w.plan.showMissionNumbers } }))}
+            style={ws.plan.showMissionNumbers ? { background: "var(--primary-soft)", borderColor: "var(--primary)", color: "var(--primary)" } : undefined}
+          >
+            <Hash size={15} /> {t("table.numbers")}
+          </button>
+        )}
         <div className="row" style={{ gap: 6, flexWrap: "wrap", flex: 1 }} role="group" aria-label={t("code.programs")}>
           {programs.map((p, i) => (
             <button key={p.id} className="prog-chip" aria-pressed={p.id === active?.id} onClick={() => setActiveId(p.id)} title={p.name}>
@@ -322,6 +332,7 @@ export default function TablePage() {
           grid={ws.plan.showGrid}
           missions={missions}
           missionHighlight={highlight}
+          showMissionNumbers={!!ws.plan.showMissionNumbers}
           items={ws.plan.items}
           programs={programs}
           activeProgramId={active?.id ?? null}
