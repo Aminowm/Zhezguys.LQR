@@ -1,2 +1,4 @@
-Put the official BIOGLOW mat picture here as `bioglow.png` (landscape, 2362 × 1143 mm aspect ratio, e.g. 4724 × 2286 px).
-The "BIOGLOW" card mode shows it automatically. Mission marker positions live in `src/field/bioglow.ts`.
+- `bioglow.jpg` — BIOGLOW full card (cleaned up from the team's screenshot; replace with a high-resolution export of the official mat when you have one, same name).
+- `bioglow-wireframe.png` — "Missions" card, cropped from FIRST's *Wireframe & Path Diagram* PDF.
+
+Both are stretched onto the mat rectangle defined in `src/field/bioglow.ts` (`MAT`).

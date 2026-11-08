@@ -2,6 +2,8 @@
 // about a team's SPIKE Prime robot. Units are the ones teams can measure
 // with a ruler and a kitchen scale (grams, millimetres).
 
+import type { RobotBuild } from "../robot/build";
+
 export type MotorKind = "medium" | "large";
 export type CasterKind = "ball" | "skid";
 export type PortName = "A" | "B" | "C" | "D" | "E" | "F";
@@ -35,6 +37,10 @@ export interface RobotProfile {
   /** Direction that makes the left/right wheel go forward with a positive power */
   leftForward: "clockwise" | "counterclockwise";
   rightForward: "clockwise" | "counterclockwise";
+  /** turning inertia from the robot builder (kg·m²); box estimate if missing */
+  inertiaKgM2?: number;
+  /** the robot builder layout this profile came from */
+  build?: RobotBuild;
 }
 
 /** Zhezguys' robot as described by the default code (88 mm wheels, 112 mm track). */
@@ -119,7 +125,7 @@ export function derive(p: RobotProfile): DerivedRobot {
   const L = p.lengthMm / 1000;
   const W = p.widthMm / 1000;
   // Box approximation, slightly reduced because the hub and motors sit near the middle.
-  const J = ((0.85 * m * (L * L + W * W)) / 12) * (p.inertiaScale ?? 1);
+  const J = (p.inertiaKgM2 && p.inertiaKgM2 > 0 ? p.inertiaKgM2 : (0.85 * m * (L * L + W * W)) / 12) * (p.inertiaScale ?? 1);
   const wheelMass = 0.025 * Math.pow(p.wheelDiameterMm / 88, 2);
   const Jw = spec.rotorInertia + 0.65 * wheelMass * r * r;
   const Meff = m + (2 * Jw) / (r * r);

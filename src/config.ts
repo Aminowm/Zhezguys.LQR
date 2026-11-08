@@ -1,5 +1,5 @@
-// Team links shown in the footer. Put your real profile URLs here.
+// Team links shown in the footer.
 export const SOCIAL = {
-  instagram: "", // e.g. "https://www.instagram.com/zhezguys/"
-  tiktok: "", // e.g. "https://www.tiktok.com/@zhezguys"
+  instagram: "https://www.instagram.com/first.zhezguys/",
+  tiktok: "https://www.tiktok.com/@zhez_guys",
 };

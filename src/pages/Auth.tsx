@@ -1,7 +1,10 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion } from "motion/react";
-import { Cloud, HardDrive, Loader2, UserPlus, LogIn, Users, Plus } from "lucide-react";
+import { Cloud, HardDrive, Loader2, UserPlus, LogIn, Users, Plus, ArrowLeft, ArrowRight } from "lucide-react";
+import RobotBuilder from "../components/RobotBuilder";
+import { applyBuild, defaultBuild, RobotBuild } from "../robot/build";
+import { DEFAULT_PROFILE } from "../sim/robot";
 import { useApp, isCloud } from "../state/app";
 import { useT, DictKey } from "../i18n";
 import { AuthError, storage } from "../storage";
@@ -80,6 +83,8 @@ export function RegisterPage() {
   const [formErr, setFormErr] = useState("");
   const [teamPreview, setTeamPreview] = useState<string | null | undefined>(undefined);
   const [confirmSent, setConfirmSent] = useState(false);
+  const [step, setStep] = useState<1 | 2>(1);
+  const [build, setBuild] = useState<RobotBuild>(defaultBuild);
   const set = (k: keyof typeof f) => (v: string) => setF((s) => ({ ...s, [k]: v }));
 
   useEffect(() => {
@@ -106,16 +111,16 @@ export function RegisterPage() {
     return Object.keys(e).length === 0;
   };
 
-  const submit = async (ev: FormEvent) => {
-    ev.preventDefault();
-    setFormErr("");
-    if (!validate()) return;
+  const finish = async () => {
     setBusy(true);
+    setFormErr("");
     try {
-      const res = await register({ ...f, mode });
+      const robot = mode === "create" ? applyBuild({ ...DEFAULT_PROFILE, name: f.teamName.trim() || "My robot" }, build) : undefined;
+      const res = await register({ ...f, mode }, robot);
       if (res.needsConfirm) setConfirmSent(true);
-      else nav("/setup");
+      else nav("/table");
     } catch (e) {
+      setStep(1);
       if (e instanceof AuthError && e.code === "bad_code") setErrors({ joinCode: t("auth.err.bad_code") });
       else if (e instanceof AuthError && e.code === "email_taken") setErrors({ email: t("auth.err.email_taken") });
       else setFormErr(errText(t, e));
@@ -123,6 +128,30 @@ export function RegisterPage() {
       setBusy(false);
     }
   };
+
+  const submit = async (ev: FormEvent) => {
+    ev.preventDefault();
+    setFormErr("");
+    if (!validate()) return;
+    if (mode === "create") {
+      setStep(2);
+      window.scrollTo({ top: 0 });
+      return;
+    }
+    await finish();
+  };
+
+  const stepper = (
+    <div className="stepper" aria-label="Steps">
+      <span className={"s" + (step === 1 ? " on" : "")}><span className="n">1</span>{t("auth.step1")}</span>
+      {mode === "create" && (
+        <>
+          <span aria-hidden>—</span>
+          <span className={"s" + (step === 2 ? " on" : "")}><span className="n">2</span>{t("auth.step2")}</span>
+        </>
+      )}
+    </div>
+  );
 
   if (confirmSent)
     return (
@@ -135,6 +164,36 @@ export function RegisterPage() {
       </div>
     );
 
+  if (step === 2)
+    return (
+      <div className="page">
+        <motion.div className="stack" style={{ gap: 16 }} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
+          {stepper}
+          <div className="row spread wrap">
+            <div>
+              <h1 style={{ fontSize: "clamp(1.6rem,3vw,2.2rem)", marginBottom: 4 }}>{t("auth.robotTitle")}</h1>
+              <p className="muted" style={{ margin: 0, maxWidth: "70ch" }}>{t("auth.robotSub")}</p>
+            </div>
+            <div className="row">
+              <button type="button" className="btn lg" onClick={() => setStep(1)}><ArrowLeft size={18} /> {t("common.back")}</button>
+              <button type="button" className="btn primary lg" onClick={finish} disabled={busy}>
+                {busy ? <Loader2 size={18} className="spin" /> : <UserPlus size={18} />} {t("auth.createTeamBtn")}
+              </button>
+            </div>
+          </div>
+          {formErr && <div className="banner error" role="alert">{formErr}</div>}
+          <div className="card">
+            <RobotBuilder value={build} onChange={setBuild} />
+          </div>
+          <div className="row" style={{ justifyContent: "flex-end" }}>
+            <button type="button" className="btn primary lg" onClick={finish} disabled={busy}>
+              {busy ? <Loader2 size={18} className="spin" /> : <UserPlus size={18} />} {t("auth.createTeamBtn")}
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    );
+
   return (
     <div className="auth-wrap">
       <motion.form className="card auth-card" onSubmit={submit} noValidate initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
@@ -142,10 +201,10 @@ export function RegisterPage() {
           <BrandMark size={36} />
           <div>
             <h2 style={{ margin: 0 }}>{t("auth.registerTitle")}</h2>
-            <div className="small muted">{t("auth.registerSub")}</div>
           </div>
         </div>
         <div className="stack" style={{ gap: 14 }}>
+          {stepper}
           <div className="grid-2" style={{ gap: 12 }}>
             <Field id="fn" label={t("auth.firstName")} value={f.firstName} onChange={set("firstName")} error={errors.firstName} autoComplete="given-name" autoFocus />
             <Field id="ln" label={t("auth.lastName")} value={f.lastName} onChange={set("lastName")} error={errors.lastName} autoComplete="family-name" />
@@ -170,7 +229,7 @@ export function RegisterPage() {
           <Field id="pw" label={t("auth.password")} value={f.password} onChange={set("password")} error={errors.password} hint={t("auth.passwordHint")} type="password" autoComplete="new-password" />
           {formErr && <div className="banner error" role="alert">{formErr}</div>}
           <button className="btn primary lg" type="submit" disabled={busy}>
-            {busy ? <Loader2 size={18} className="spin" /> : <UserPlus size={18} />} {t("auth.submitRegister")}
+            {busy ? <Loader2 size={18} className="spin" /> : mode === "create" ? <ArrowRight size={18} /> : <UserPlus size={18} />} {t("auth.submitRegister")}
           </button>
           <div className="small muted">
             {t("auth.haveAccount")} <Link to="/login">{t("nav.login")}</Link>

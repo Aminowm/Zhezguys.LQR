@@ -1,57 +1,70 @@
-// BIOGLOW (FLL Challenge 2026/27) table layout.
+// BIOGLOW (FLL Challenge 2026/27, Founders Edition) field.
 //
-// PLACEHOLDER: the official mission positions and mat art are not in this
-// repository yet. Positions below are an evenly spread, editable layout so
-// teams can already plan. When the official mat image and rulebook arrive,
-// replace MAT_IMAGE and the x/y/w/h numbers here (all in table millimetres,
-// origin = top-left corner of the mat as seen from the team's side).
+// The competition table is 2362 × 1143 mm (inside the walls). The BIOGLOW
+// mat is smaller: FIRST's "Wireframe & Path Diagram" uses a 20 cm grid that
+// is 10 squares wide, i.e. ≈ 2000 × 1139 mm. The mat lies against the south
+// (bottom, team-side) wall and is centred left–right.
+//
+// All numbers are table millimetres, origin = top-left inner corner of the
+// table as seen from the team side (x → right, y ↓ toward the teams).
+// If your measured mat differs, change MAT and everything follows.
 
 export const TABLE_W = 2362;
 export const TABLE_H = 1143;
 export const WALL = 38; // drawn wall thickness, mm
 
-/** Put the official mat picture at public/mats/bioglow.png (2362×1143 aspect). */
-export const MAT_IMAGE = "mats/bioglow.png";
+export const MAT = { w: 2000, h: 1139, x: (2362 - 2000) / 2, y: 1143 - 1139 };
+
+/** Full colour card (public/mats). */
+export const MAT_IMAGE = "mats/bioglow.jpg";
+/** Line drawing of the mission models (public/mats). */
+export const WIREFRAME_IMAGE = "mats/bioglow-wireframe.png";
+
+/** Launch areas: quarter circles in the two bottom corners of the mat. */
+export const LAUNCH_RADIUS = 481;
+export interface LaunchArea {
+  id: "left" | "right";
+  cx: number;
+  cy: number;
+  r: number;
+  color: string;
+}
+export const HOME_AREAS: LaunchArea[] = [
+  { id: "left", cx: MAT.x, cy: MAT.y + MAT.h, r: LAUNCH_RADIUS, color: "#e0242c" },
+  { id: "right", cx: MAT.x + MAT.w, cy: MAT.y + MAT.h, r: LAUNCH_RADIUS, color: "#1565b3" },
+];
 
 export interface MissionDef {
   id: string;
   label: string;
-  x: number; // centre, mm
-  y: number;
-  w: number;
-  h: number;
-  hue: number; // placeholder colour (full-card mode)
+  /** where the red number badges are printed on the mat (some missions have two) */
+  spots: { x: number; y: number }[];
 }
 
-const hues = [168, 190, 140, 280, 205, 95, 320, 175, 250, 120, 300, 155, 230, 75, 340];
-
-const spots: [number, number][] = [
-  [720, 210], [1090, 160], [1460, 210], [1830, 190],
-  [640, 560], [1000, 470], [1360, 520], [1720, 470], [2060, 560],
-  [760, 900], [1130, 960], [1500, 880], [1870, 930],
-  [1180, 700], [450, 330],
+// Badge centres measured on the mat picture, as fractions of the mat size.
+const BADGES: [string, [number, number][]][] = [
+  ["01", [[0.4391, 0.9368]]],
+  ["02", [[0.3169, 0.523]]],
+  ["03", [[0.0429, 0.4072]]],
+  ["04", [[0.0733, 0.1273]]],
+  ["05", [[0.1974, 0.064]]],
+  ["06", [[0.7592, 0.0632]]],
+  ["07", [[0.8229, 0.0632]]],
+  ["08", [[0.2685, 0.064]]],
+  ["09", [[0.3275, 0.064]]],
+  ["10", [[0.3902, 0.0985], [0.5466, 0.3235]]],
+  ["11", [[0.7034, 0.4737]]],
+  ["12", [[0.9649, 0.3309]]],
 ];
 
-export const MISSIONS: MissionDef[] = spots.map(([x, y], i) => ({
-  id: `M${String(i + 1).padStart(2, "0")}`,
-  label: `M${String(i + 1).padStart(2, "0")}`,
-  x,
-  y,
-  w: i === 13 ? 220 : 180,
-  h: i === 13 ? 220 : 150,
-  hue: hues[i % hues.length],
+export const BADGE_MM = 92;
+
+export const MISSIONS: MissionDef[] = BADGES.map(([n, spots]) => ({
+  id: `M${n}`,
+  label: n,
+  spots: spots.map(([u, v]) => ({ x: Math.round(MAT.x + u * MAT.w), y: Math.round(MAT.y + v * MAT.h) })),
 }));
 
-export interface Zone {
-  id: string;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
-
-/** Launch / home areas (placeholder: both lower corners, like recent seasons). */
-export const HOME_AREAS: Zone[] = [
-  { id: "left", x: 0, y: 700, w: 400, h: 443 },
-  { id: "right", x: TABLE_W - 400, y: 700, w: 400, h: 443 },
-];
+/** Default start poses: inside the left / right launch areas. */
+export const START_LEFT = { x: Math.round(MAT.x + 210), y: Math.round(MAT.y + MAT.h - 180), headingDeg: 0 };
+export const START_RIGHT = { x: Math.round(MAT.x + MAT.w - 210), y: Math.round(MAT.y + MAT.h - 180), headingDeg: 180 };

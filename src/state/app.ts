@@ -1,6 +1,22 @@
 import { create } from "zustand";
 import { storage, AuthError, RegisterInput, Session, Workspace } from "../storage";
 import { defaultWorkspace, upgradeWorkspace } from "./workspace";
+import type { RobotProfile } from "../sim/robot";
+
+const PENDING_ROBOT = "zg.pendingRobot.v1";
+function takePendingRobot(): RobotProfile | null {
+  try {
+    const raw = localStorage.getItem(PENDING_ROBOT);
+    localStorage.removeItem(PENDING_ROBOT);
+    return raw ? (JSON.parse(raw) as RobotProfile) : null;
+  } catch {
+    return null;
+  }
+}
+function newWorkspace(robot: RobotProfile | null | undefined) {
+  const ws = defaultWorkspace();
+  return robot ? { ...ws, robot } : ws;
+}
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 type Theme = "light" | "dark" | "system";
@@ -13,7 +29,7 @@ interface AppState {
   theme: Theme;
   toast: string | null;
   init(): Promise<void>;
-  register(input: RegisterInput): Promise<{ needsConfirm?: boolean }>;
+  register(input: RegisterInput, robot?: RobotProfile): Promise<{ needsConfirm?: boolean }>;
   login(email: string, password: string): Promise<void>;
   logout(): Promise<void>;
   update(fn: (ws: Workspace) => Workspace): void;
@@ -67,12 +83,21 @@ export const useApp = create<AppState>((set, get) => ({
     set({ session, ws, ready: true });
   },
 
-  async register(input) {
+  async register(input, robot) {
     const res = await storage.register(input);
-    if (res.needsConfirm) return { needsConfirm: true };
+    if (res.needsConfirm) {
+      if (robot) {
+        try {
+          localStorage.setItem(PENDING_ROBOT, JSON.stringify(robot));
+        } catch {
+          /* ignore */
+        }
+      }
+      return { needsConfirm: true };
+    }
     const session = res.session!;
     const loaded = await storage.loadWorkspace(session.team.id).catch(() => null);
-    const ws = upgradeWorkspace(loaded);
+    const ws = loaded ? upgradeWorkspace(loaded) : newWorkspace(robot);
     if (!loaded) await storage.saveWorkspace(session.team.id, ws).catch(() => {});
     set({ session, ws });
     return {};
@@ -81,7 +106,7 @@ export const useApp = create<AppState>((set, get) => ({
   async login(email, password) {
     const session = await storage.login(email, password);
     const loaded = await storage.loadWorkspace(session.team.id).catch(() => null);
-    const ws = upgradeWorkspace(loaded);
+    const ws = loaded ? upgradeWorkspace(loaded) : newWorkspace(takePendingRobot());
     if (!loaded) await storage.saveWorkspace(session.team.id, ws).catch(() => {});
     set({ session, ws });
   },

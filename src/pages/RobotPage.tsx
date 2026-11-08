@@ -1,12 +1,12 @@
-import type { ReactElement } from "react";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "motion/react";
-import { Wand2, Loader2, Check, Gauge, Ruler, Disc3, Cog, Waves, Copy, FlaskConical, ArrowRight, ChevronDown } from "lucide-react";
+import { Wand2, Loader2, Check, Cog, Copy, FlaskConical, ArrowRight, ChevronDown, Bot } from "lucide-react";
 import { useApp } from "../state/app";
 import { useT } from "../i18n";
 import { breakawayTurnPower, derive, PortName, RobotProfile } from "../sim/robot";
-import RobotShape from "../components/field/RobotShape";
+import RobotBuilder from "../components/RobotBuilder";
+import { applyBuild, buildFromProfile, RobotBuild } from "../robot/build";
 import LineChart from "../components/LineChart";
 import { tuneRobot, calibrateRobot } from "../tuning/client";
 import type { FullTune } from "../tuning/tuner";
@@ -60,15 +60,6 @@ function Seg<T extends string>(props: { label: string; value: T; options: { v: T
   );
 }
 
-function Section({ icon, title, children }: { icon: ReactElement; title: string; children: React.ReactNode }) {
-  return (
-    <section className="card">
-      <div className="card-title"><span className="feature-icon" style={{ width: 34, height: 34, margin: 0 }}>{icon}</span><h3 style={{ margin: 0 }}>{title}</h3></div>
-      <div className="grid-2" style={{ gap: 14 }}>{children}</div>
-    </section>
-  );
-}
-
 function BeforeAfter({ rows }: { rows: { k: string; before: string; after: string; better: boolean }[] }) {
   const t = useT();
   return (
@@ -96,12 +87,18 @@ export default function RobotPage({ setup }: { setup?: boolean }) {
   const [calFit, setCalFit] = useState<CalibrationFit | null>(null);
   const [calBusy, setCalBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [advOpen, setAdvOpen] = useState(false);
 
   const p = ws?.robot;
   const d = useMemo(() => (p ? derive(p) : null), [p]);
   if (!ws || !p || !d) return null;
   const set = (patch: Partial<RobotProfile>) => {
     update((w) => ({ ...w, robot: { ...w.robot, ...patch } }));
+    setTune(null);
+  };
+  const build = p.build ?? buildFromProfile(p);
+  const setBuild = (b: RobotBuild) => {
+    update((w) => ({ ...w, robot: applyBuild(w.robot, b) }));
     setTune(null);
   };
 
@@ -169,7 +166,6 @@ export default function RobotPage({ setup }: { setup?: boolean }) {
     }
   };
 
-  const L = Math.max(p.lengthMm, p.widthMm) + 120;
   const lqrTrace = (k: "before" | "after") => {
     const run = tune?.lqr[k].runs[0];
     return run ? { x: run.trace.t, y: run.trace.h } : { x: [], y: [] };
@@ -192,92 +188,65 @@ export default function RobotPage({ setup }: { setup?: boolean }) {
         </div>
       </motion.div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1.35fr) minmax(0,1fr)", gap: 18 }} className="robot-grid">
-        <div className="stack" style={{ gap: 16 }}>
-          <Section icon={<Ruler size={18} />} title={t("robot.size")}>
-            <Num id="mass" label={t("robot.mass")} value={p.massG} unit="g" min={200} max={4000} step={10} onChange={(v) => set({ massG: v })} />
-            <Num id="len" label={t("robot.length")} value={p.lengthMm} unit="mm" min={80} max={400} onChange={(v) => set({ lengthMm: v })} />
-            <Num id="wid" label={t("robot.width")} value={p.widthMm} unit="mm" min={80} max={400} onChange={(v) => set({ widthMm: v })} />
-            <Num id="atf" label={t("robot.axleToFront")} value={p.axleToFrontMm} unit="mm" min={10} max={p.lengthMm} onChange={(v) => set({ axleToFrontMm: v })} />
-          </Section>
-          <Section icon={<Disc3 size={18} />} title={t("robot.wheels")}>
-            <div className="field">
-              <Num id="wd" label={t("robot.wheelDiameter")} value={p.wheelDiameterMm} unit="mm" min={20} max={150} step={0.1} onChange={(v) => set({ wheelDiameterMm: v })} />
-              <div className="row wrap" style={{ gap: 6 }}>
-                {[56, 62.4, 88].map((w) => (
-                  <button key={w} className="btn sm" aria-pressed={p.wheelDiameterMm === w} onClick={() => set({ wheelDiameterMm: w })}>{w} mm</button>
-                ))}
-              </div>
-            </div>
-            <Num id="at" label={t("robot.axleTrack")} value={p.axleTrackMm} unit="mm" min={40} max={350} step={0.5} onChange={(v) => set({ axleTrackMm: v })} />
-          </Section>
-          <Section icon={<Cog size={18} />} title={t("robot.motors")}>
-            <Seg label={t("robot.motor")} value={p.motor} options={[{ v: "medium", label: t("robot.motorMedium") }, { v: "large", label: t("robot.motorLarge") }]} onChange={(v) => set({ motor: v })} />
-            <div className="grid-2" style={{ gap: 10 }}>
-              <div className="field">
-                <label htmlFor="lp">{t("robot.leftPort")}</label>
-                <select id="lp" className="input" value={p.leftPort} onChange={(e) => set({ leftPort: e.target.value as PortName })}>
-                  {PORTS.map((x) => <option key={x}>{x}</option>)}
-                </select>
-              </div>
-              <div className="field">
-                <label htmlFor="rp">{t("robot.rightPort")}</label>
-                <select id="rp" className="input" value={p.rightPort} onChange={(e) => set({ rightPort: e.target.value as PortName })}>
-                  {PORTS.map((x) => <option key={x}>{x}</option>)}
-                </select>
-              </div>
-            </div>
-            <Seg label={t("robot.leftForward")} value={p.leftForward} options={[{ v: "clockwise", label: t("robot.cw") }, { v: "counterclockwise", label: t("robot.ccw") }]} onChange={(v) => set({ leftForward: v })} />
-            <Seg label={t("robot.rightForward")} value={p.rightForward} options={[{ v: "clockwise", label: t("robot.cw") }, { v: "counterclockwise", label: t("robot.ccw") }]} onChange={(v) => set({ rightForward: v })} />
-          </Section>
-          <Section icon={<Waves size={18} />} title={t("robot.contact")}>
-            <Seg label={t("robot.caster")} value={p.caster} options={[{ v: "ball", label: t("robot.ball") }, { v: "skid", label: t("robot.skid") }]} onChange={(v) => set({ caster: v })} />
-            <div className="field">
-              <label htmlFor="wl">{t("robot.wheelLoad")}: <strong className="num">{Math.round(p.wheelLoadShare * 100)} %</strong></label>
-              <input id="wl" type="range" min={50} max={100} value={Math.round(p.wheelLoadShare * 100)} onChange={(e) => set({ wheelLoadShare: Number(e.target.value) / 100 })} />
-            </div>
-          </Section>
-          <Section icon={<Gauge size={18} />} title={t("robot.realism")}>
-            <div className="field">
-              <label htmlFor="bat">{t("robot.battery")}: <strong className="num">{p.batteryPct} %</strong></label>
-              <input id="bat" type="range" min={0} max={100} value={p.batteryPct} onChange={(e) => set({ batteryPct: Number(e.target.value) })} />
-            </div>
-            <Num id="mm" label={t("robot.motorMismatch")} value={p.motorMismatchPct} unit="%" min={0} max={15} step={0.5} onChange={(v) => set({ motorMismatchPct: v })} />
-            <Num id="wm" label={t("robot.wheelMismatch")} value={p.wheelMismatchPct} unit="%" min={0} max={5} step={0.1} onChange={(v) => set({ wheelMismatchPct: v })} />
-            <Num id="gn" label={t("robot.gyroNoise")} value={p.gyroNoiseDeg} unit="°" min={0} max={1} step={0.01} onChange={(v) => set({ gyroNoiseDeg: v })} />
-            <Num id="is" label={t("robot.inertiaScale")} value={p.inertiaScale} unit="×" min={0.3} max={4} step={0.05} onChange={(v) => set({ inertiaScale: v })} hint={t("robot.calibrated")} />
-            <Num id="ss" label={t("robot.scrubScale")} value={p.scrubScale} unit="×" min={0.2} max={6} step={0.05} onChange={(v) => set({ scrubScale: v })} hint={t("robot.calibrated")} />
-          </Section>
+      <section className="card" style={{ marginBottom: 18 }}>
+        <div className="card-title"><span className="feature-icon" style={{ width: 34, height: 34, margin: 0 }}><Bot size={18} /></span><h3 style={{ margin: 0 }}>{t("robot.builderTitle")}</h3></div>
+        <RobotBuilder value={build} onChange={setBuild} />
+      </section>
+
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1.2fr)", gap: 18, alignItems: "start" }} className="robot-grid">
+        <div className="card">
+          <div className="card-title"><h3 style={{ margin: 0 }}>{t("robot.model")}</h3></div>
+          <div className="grid-2" style={{ gap: 14 }}>
+            <div className="stat"><span className="v">{r(d.Jeff * 1000, 2)}</span><span className="k">{t("robot.inertia")}, g·m²</span></div>
+            <div className="stat"><span className="v">{Math.round(d.vMax)}</span><span className="k">{t("robot.topSpeed")}, mm/s</span></div>
+            <div className="stat"><span className="v">{Math.round(d.wMaxDeg)}</span><span className="k">{t("robot.spinRate")}, °/s</span></div>
+            <div className="stat"><span className="v">{r(breakawayTurnPower(p), 1)} %</span><span className="k">{t("robot.breakaway")}</span></div>
+            <div className="stat"><span className="v">{Math.round((-1 / d.yawA) * 1000)} ms</span><span className="k">{t("robot.timeConst")}</span></div>
+            <div className="stat"><span className="v mono" style={{ fontSize: "0.92rem" }}>dω/dt = {r(d.yawA, 2)}·ω + {r(d.yawB, 1)}·u</span><span className="k">ω °/s, u %</span></div>
+          </div>
+          <button className="btn primary lg" style={{ width: "100%", marginTop: 16 }} onClick={runTune} disabled={tuning}>
+            {tuning ? <Loader2 size={18} className="spin" /> : <Wand2 size={18} />} {tuning ? t("robot.tuning") : t("robot.tune")}
+          </button>
+          {tune && <p className="tiny muted" style={{ margin: "8px 0 0", textAlign: "center" }}>{t("robot.tuneDone", { s: (tune.ms / 1000).toFixed(1) })}</p>}
         </div>
 
-        {/* right column */}
-        <div className="stack" style={{ gap: 16, position: "sticky", top: 76, alignSelf: "start" }}>
-          <div className="card">
-            <div className="card-title"><h3 style={{ margin: 0 }}>{t("robot.preview")}</h3></div>
-            <svg viewBox={`${-L / 2} ${-L / 2} ${L} ${L}`} width="100%" style={{ maxHeight: 260, display: "block", background: "var(--surface-2)", borderRadius: 12 }} role="img" aria-label={t("robot.preview")}>
-              <g transform="rotate(-90)">
-                <RobotShape x={0} y={0} heading={0} profile={p} color="var(--primary)" />
-              </g>
-              <line x1={-p.axleTrackMm / 2} y1={L / 2 - 22} x2={p.axleTrackMm / 2} y2={L / 2 - 22} stroke="var(--ink-2)" strokeWidth="2" />
-              <text x="0" y={L / 2 - 30} textAnchor="middle" fontSize="16" fill="var(--ink-2)" className="num">{p.axleTrackMm} mm</text>
-            </svg>
-          </div>
-          <div className="card">
-            <div className="card-title"><h3 style={{ margin: 0 }}>{t("robot.model")}</h3></div>
-            <div className="grid-2" style={{ gap: 14 }}>
-              <div className="stat"><span className="v">{r(d.Jeff * 1000, 2)}</span><span className="k">{t("robot.inertia")}, g·m²</span></div>
-              <div className="stat"><span className="v">{Math.round(d.vMax)}</span><span className="k">{t("robot.topSpeed")}, mm/s</span></div>
-              <div className="stat"><span className="v">{Math.round(d.wMaxDeg)}</span><span className="k">{t("robot.spinRate")}, °/s</span></div>
-              <div className="stat"><span className="v">{r(breakawayTurnPower(p), 1)} %</span><span className="k">{t("robot.breakaway")}</span></div>
-              <div className="stat"><span className="v">{Math.round((-1 / d.yawA) * 1000)} ms</span><span className="k">{t("robot.timeConst")}</span></div>
-              <div className="stat"><span className="v mono" style={{ fontSize: "0.92rem" }}>dω/dt = {r(d.yawA, 2)}·ω + {r(d.yawB, 1)}·u</span><span className="k">ω °/s, u %</span></div>
-            </div>
-            <button className="btn primary lg" style={{ width: "100%", marginTop: 16 }} onClick={runTune} disabled={tuning}>
-              {tuning ? <Loader2 size={18} className="spin" /> : <Wand2 size={18} />} {tuning ? t("robot.tuning") : t("robot.tune")}
-            </button>
-            {tune && <p className="tiny muted" style={{ margin: "8px 0 0", textAlign: "center" }}>{t("robot.tuneDone", { s: (tune.ms / 1000).toFixed(1) })}</p>}
-          </div>
-        </div>
+        <section className="card">
+          <button className="row spread" style={{ width: "100%", background: "none", border: 0, padding: 0, cursor: "pointer", color: "inherit", font: "inherit" }} aria-expanded={advOpen} onClick={() => setAdvOpen((x) => !x)}>
+            <span className="row"><span className="feature-icon" style={{ width: 34, height: 34, margin: 0 }}><Cog size={18} /></span><h3 style={{ margin: 0, textAlign: "left" }}>{t("robot.advanced")}</h3></span>
+            <ChevronDown size={18} style={{ transform: advOpen ? "rotate(180deg)" : undefined, transition: "transform .2s", flex: "none" }} />
+          </button>
+          <AnimatePresence initial={false}>
+            {advOpen && (
+              <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: "hidden" }}>
+                <div className="grid-2" style={{ gap: 14, marginTop: 16 }}>
+                  <div className="field">
+                    <label htmlFor="lp">{t("robot.leftPort")}</label>
+                    <select id="lp" className="input" value={p.leftPort} onChange={(e) => set({ leftPort: e.target.value as PortName })}>
+                      {PORTS.map((x) => <option key={x}>{x}</option>)}
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="rp">{t("robot.rightPort")}</label>
+                    <select id="rp" className="input" value={p.rightPort} onChange={(e) => set({ rightPort: e.target.value as PortName })}>
+                      {PORTS.map((x) => <option key={x}>{x}</option>)}
+                    </select>
+                  </div>
+                  <Seg label={t("robot.leftForward")} value={p.leftForward} options={[{ v: "clockwise", label: t("robot.cw") }, { v: "counterclockwise", label: t("robot.ccw") }]} onChange={(v) => set({ leftForward: v })} />
+                  <Seg label={t("robot.rightForward")} value={p.rightForward} options={[{ v: "clockwise", label: t("robot.cw") }, { v: "counterclockwise", label: t("robot.ccw") }]} onChange={(v) => set({ rightForward: v })} />
+                  <div className="field">
+                    <label htmlFor="bat">{t("robot.battery")}: <strong className="num">{p.batteryPct} %</strong></label>
+                    <input id="bat" type="range" min={0} max={100} value={p.batteryPct} onChange={(e) => set({ batteryPct: Number(e.target.value) })} />
+                  </div>
+                  <Num id="gn" label={t("robot.gyroNoise")} value={p.gyroNoiseDeg} unit="°" min={0} max={1} step={0.01} onChange={(v) => set({ gyroNoiseDeg: v })} />
+                  <Num id="mm" label={t("robot.motorMismatch")} value={p.motorMismatchPct} unit="%" min={0} max={15} step={0.5} onChange={(v) => set({ motorMismatchPct: v })} />
+                  <Num id="wm" label={t("robot.wheelMismatch")} value={p.wheelMismatchPct} unit="%" min={0} max={5} step={0.1} onChange={(v) => set({ wheelMismatchPct: v })} />
+                  <Num id="is" label={t("robot.inertiaScale")} value={p.inertiaScale} unit="×" min={0.3} max={4} step={0.05} onChange={(v) => set({ inertiaScale: v })} hint={t("robot.calibrated")} />
+                  <Num id="ss" label={t("robot.scrubScale")} value={p.scrubScale} unit="×" min={0.2} max={6} step={0.05} onChange={(v) => set({ scrubScale: v })} hint={t("robot.calibrated")} />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </section>
       </div>
 
       <AnimatePresence>

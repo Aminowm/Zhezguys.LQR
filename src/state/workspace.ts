@@ -1,6 +1,8 @@
 import { DEFAULT_FILES, DEFAULT_PROGRAM } from "../code/defaults";
 import { DEFAULT_PROFILE } from "../sim/robot";
 import type { Program, Workspace } from "../storage/types";
+import { START_LEFT, START_RIGHT } from "../field/bioglow";
+import { applyBuild, defaultBuild } from "../robot/build";
 
 export const PROGRAM_COLORS = ["#0d9488", "#d97706", "#7c3aed", "#db2777", "#2563eb", "#65a30d", "#dc2626", "#0891b2"];
 export const DRAW_COLORS = ["#1b2420", "#0d9488", "#d97706", "#7c3aed", "#db2777", "#2563eb", "#dc2626", "#ffffff"];
@@ -14,7 +16,7 @@ export function newProgram(index: number, name?: string): Program {
     name: name ?? `Program ${index + 1}`,
     color: PROGRAM_COLORS[index % PROGRAM_COLORS.length],
     code: index === 0 ? DEFAULT_PROGRAM : `# ${name ?? `Program ${index + 1}`}\nGyro_reset(0)\n`,
-    start: leftSide ? { x: 200, y: 950, headingDeg: 0 } : { x: 2162, y: 950, headingDeg: 180 },
+    start: leftSide ? { ...START_LEFT } : { ...START_RIGHT },
     visible: true,
     missions: [],
     notes: "",
@@ -24,7 +26,7 @@ export function newProgram(index: number, name?: string): Program {
 export function defaultWorkspace(): Workspace {
   return {
     version: 1,
-    robot: { ...DEFAULT_PROFILE, name: "My robot" },
+    robot: applyBuild({ ...DEFAULT_PROFILE, name: "My robot" }, { ...defaultBuild(), measuredMassG: DEFAULT_PROFILE.massG }),
     files: { ...DEFAULT_FILES },
     programs: [newProgram(0), newProgram(1)],
     plan: { cardMode: "full", showGrid: false, items: [], missionOverrides: {} },

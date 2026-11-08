@@ -4,13 +4,13 @@ import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "motion/react";
 import {
   MousePointer2, Pencil, MoveUpRight, Route, Type, Bot, Square, Eraser, Undo2, Redo2, Grid3x3, ZoomIn, ZoomOut, Maximize,
-  Plus, Play, Pause, RotateCcw, PanelRightClose, PanelRightOpen, Trash2, Eye, EyeOff, Download, Wand2, Loader2, AlertTriangle,
-  ClipboardList, Code2, Flag, Move, CheckCircle2, CloudOff,
+  Plus, Play, Pause, RotateCcw, PanelRightClose, PanelRightOpen, Trash2, Eye, EyeOff, Wand2, Loader2, AlertTriangle,
+  ClipboardList, Code2, Flag, CheckCircle2, CloudOff,
 } from "lucide-react";
 import { useApp } from "../state/app";
 import { useT, DictKey } from "../i18n";
 import { DRAW_COLORS, PROGRAM_COLORS, newProgram, uid } from "../state/workspace";
-import { HOME_AREAS, MAT_IMAGE, MISSIONS, TABLE_H, TABLE_W } from "../field/bioglow";
+import { MISSIONS, TABLE_H, TABLE_W } from "../field/bioglow";
 import { routeToCode } from "../field/route";
 import FieldView, { FieldHandle, RunView } from "../components/field/FieldView";
 import CodeEditor from "../components/CodeEditor";
@@ -36,14 +36,6 @@ const fmtTime = (ms: number) => {
   return `${m}:${(s - m * 60).toFixed(1).padStart(4, "0")}`;
 };
 
-function download(name: string, text: string, type = "application/json") {
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob([text], { type }));
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-}
-
 type Tab = "plan" | "code" | "run";
 
 export default function TablePage() {
@@ -62,8 +54,6 @@ export default function TablePage() {
   const [panel, setPanel] = useState(true);
   const [tab, setTab] = useState<Tab>("plan");
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
-  const [editMissions, setEditMissions] = useState(false);
-  const [matImage, setMatImage] = useState<string | null>(null);
   const [textEdit, setTextEdit] = useState<{ x: number; y: number; left: number; top: number; id?: string; value: string } | null>(null);
   const past = useRef<PlanItem[][]>([]);
   const future = useRef<PlanItem[][]>([]);
@@ -80,10 +70,6 @@ export default function TablePage() {
 
   useEffect(() => {
     warmPython();
-    const img = new Image();
-    img.onload = () => setMatImage(MAT_IMAGE);
-    img.onerror = () => setMatImage(null);
-    img.src = MAT_IMAGE;
   }, []);
 
   const programs = ws?.programs ?? [];
@@ -92,10 +78,7 @@ export default function TablePage() {
     if (!active && programs[0]) setActiveId(programs[0].id);
   }, [active, programs]);
 
-  const missions = useMemo(
-    () => MISSIONS.map((m) => ({ ...m, ...(ws?.plan.missionOverrides[m.id] ?? {}) })),
-    [ws?.plan.missionOverrides],
-  );
+  const missions = MISSIONS;
   const highlight = useMemo(() => new Set(active?.missions ?? []), [active]);
 
   // ───── plan item edits with undo ─────
@@ -337,12 +320,8 @@ export default function TablePage() {
           ref={fieldRef}
           mode={ws.plan.cardMode}
           grid={ws.plan.showGrid}
-          matImage={matImage}
-          homeLabel={t("table.home")}
           missions={missions}
           missionHighlight={highlight}
-          editMissions={editMissions}
-          onMissionMove={(id, x, y) => update((w) => ({ ...w, plan: { ...w.plan, missionOverrides: { ...w.plan.missionOverrides, [id]: { x, y } } } }))}
           items={ws.plan.items}
           programs={programs}
           activeProgramId={active?.id ?? null}
@@ -398,11 +377,6 @@ export default function TablePage() {
             <Route size={14} /> {t("table.pathHint")}
           </div>
         )}
-        {ws.plan.cardMode === "full" && !matImage && (
-          <div className="canvas-hud tiny hide-sm" style={{ right: 10, bottom: 10, maxWidth: 360 }}>
-            <AlertTriangle size={14} style={{ flex: "none" }} /> {t("table.matMissing")}
-          </div>
-        )}
         {textEdit && (
           <input
             autoFocus
@@ -443,14 +417,6 @@ export default function TablePage() {
               onClear={() => {
                 if (confirm(t("table.clearConfirm", { name: active.name }))) setItems((items) => items.filter((i) => i.programId !== active.id));
               }}
-              editMissions={editMissions}
-              setEditMissions={setEditMissions}
-              onExportLayout={() =>
-                download(
-                  "bioglow-layout.json",
-                  JSON.stringify({ table: { w: TABLE_W, h: TABLE_H }, homeAreas: HOME_AREAS, missions: missions.map(({ id, x, y, w, h }) => ({ id, x, y, w, h })) }, null, 2),
-                )
-              }
               totalRunMs={totalRunMs}
             />
           ) : tab === "code" ? (
@@ -509,9 +475,6 @@ function PlanTab(props: {
   onChange(p: Partial<Program>): void;
   onDelete(): void;
   onClear(): void;
-  editMissions: boolean;
-  setEditMissions(v: boolean): void;
-  onExportLayout(): void;
   totalRunMs: number;
 }) {
   const t = useT();
@@ -563,7 +526,7 @@ function PlanTab(props: {
             const on = p.missions.includes(m.id);
             return (
               <button key={m.id} className="btn sm" aria-pressed={on} onClick={() => toggleMission(m.id)} style={on ? { background: "var(--glow-soft)", borderColor: "var(--glow)", fontWeight: 650 } : undefined}>
-                {m.label}
+                {m.id}
               </button>
             );
           })}
@@ -576,13 +539,6 @@ function PlanTab(props: {
       <div className="row wrap">
         <button className="btn sm" onClick={props.onClear}><Eraser size={15} /> {t("table.clearDrawings")}</button>
         <button className="btn sm danger" onClick={props.onDelete}><Trash2 size={15} /> {t("table.deleteProgram")}</button>
-      </div>
-      <div className="divider" style={{ margin: "2px 0" }} />
-      <div className="row wrap">
-        <button className={"btn sm" + (props.editMissions ? " primary" : "")} aria-pressed={props.editMissions} onClick={() => props.setEditMissions(!props.editMissions)}>
-          <Move size={15} /> {t("table.editMissions")}
-        </button>
-        <button className="btn sm" onClick={props.onExportLayout}><Download size={15} /> {t("table.exportLayout")}</button>
       </div>
       {props.totalRunMs > 0 && (
         <div className="stack" style={{ gap: 6 }}>

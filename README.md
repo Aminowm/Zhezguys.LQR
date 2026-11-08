@@ -5,10 +5,11 @@ Made by team **Zhezguys**, who are known for accurate LQR turns and straight dri
 
 - **Real Pybricks code in the browser.** Python (Pyodide) runs the team's own code against a simulated hub, motors and gyro.
 - **LQR vs PID vs the Pybricks gyro.** The three controllers run side by side on the same robot, with animations, charts and numbers.
-- **Robot interpreter and auto-tuner.** A team enters its robot (mass, size, wheels, motors…). The site solves the LQR Riccati equation for that robot, refines the gains in simulation and writes them into the team's code with one click.
+- **Visual robot builder (registration step 2 and the Robot page).** Teams place SPIKE Prime parts on a top view of their robot: hub, motors, sensors, chassis and attachments. They drag the wheels to set the axle track and add a kitchen-scale weight. From where the parts sit, the site computes mass, centre of mass, turning inertia and the weight on the drive wheels, and warns about tipping, wheel slip or a heavier side.
+- **Auto-tuner.** It builds a turning model from the robot, solves the LQR Riccati equation, refines the gains in simulation and writes them into the team's code with one click.
 - **Calibration from a real robot.** A team runs a 1-second spin test on the hub and pastes the log. The simulator then fits its turning inertia and tyre scrub to that robot.
-- **2362 × 1143 mm table planner** with three card modes: blank table, BIOGLOW full card, and missions only. Drawing tools are pen, arrows, robot routes (with mm and turn angles), text, robot positions and zones. Each drawing belongs to Program 1, 2, 3…, and a drawn **route can be converted to code** (`turn_lqr` + `straight_lqr`).
-- **Team accounts.** Fields are name, surname, team name, e-mail and password. The first member creates the team and gets a 6-letter join code; teammates join with it. Only that team can see or edit its workspace.
+- **2362 × 1143 mm table planner** with three card modes: blank table, the full BIOGLOW mat, and missions only (FIRST's wireframe of the mission models with the mission numbers M01–M12). Drawing tools are pen, arrows, robot routes (with mm and turn angles), text, robot positions and zones. Each drawing belongs to Program 1, 2, 3…, and a drawn **route can be converted to code** (`turn_lqr` + `straight_lqr`).
+- **Team accounts.** Step 1 asks for name, surname, team name, e-mail and password; step 2 is the robot builder. The first member creates the team and gets a 6-letter join code; teammates join with it. Only that team can see or edit its workspace.
 - **Languages:** English, Русский and Қазақша, plus light and dark themes.
 
 ## Run it locally
@@ -42,11 +43,11 @@ Turn it on once: repository **Settings → Pages → Source: GitHub Actions**.
 
 ## BIOGLOW mat and missions
 
-The official mat art and mission positions are not in the repo yet.
+The competition table is 2362 × 1143 mm. The BIOGLOW (Founders Edition) mat is smaller: the official *Wireframe & Path Diagram* uses 20 cm squares, 10 across, so the mat is about 2000 × 1139 mm. The site places it at real size against the bottom (team-side) wall, centred left to right. All of this is set by `MAT` in [`src/field/bioglow.ts`](src/field/bioglow.ts); if your measured mat differs, change those numbers.
 
-- Put the mat picture at `public/mats/bioglow.png`. The BIOGLOW card mode uses it automatically.
-- Mission markers (M01…M15) and launch areas are in [`src/field/bioglow.ts`](src/field/bioglow.ts), in table millimetres.
-  Until those are filled in, teams can drag markers in the table page (**Move mission markers**) and use **Export layout** to get the JSON.
+- `public/mats/bioglow.jpg` is the full mat. It is a cleaned-up copy of a small screenshot, so replace it with a high-resolution export of the official mat when you have one (keep the same name).
+- `public/mats/bioglow-wireframe.png` is the "Missions" card, cropped from FIRST's wireframe PDF.
+- The mission numbers M01–M12 (M10 has two spots) and the quarter-circle launch areas (radius ≈ 481 mm) were measured from those files.
 
 ## How the simulator works
 
@@ -67,7 +68,8 @@ src/
   code/defaults.ts      starter code: config.py, helpers.py, lqr.py (Zhezguys LQR), pid.py
   sim/                  physics, Pyodide runner, web worker, simulated pybricks package
   tuning/               LQR/PID/DriveBase auto-tuner and real-robot calibration
-  field/                table size, BIOGLOW layout, route → code
+  field/                table size, BIOGLOW mat position, missions, route → code
+  robot/                robot builder model (parts → mass, centre of mass, inertia)
   components/           table canvas, charts, code editor, arenas
   pages/                Landing, Auth, Table, Code, Robot, Compare, Team
   storage/              browser-only and Supabase adapters

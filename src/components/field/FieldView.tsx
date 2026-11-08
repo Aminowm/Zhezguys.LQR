@@ -25,12 +25,8 @@ export interface FieldHandle {
 interface Props {
   mode: CardMode;
   grid: boolean;
-  matImage: string | null;
-  homeLabel: string;
   missions: MissionDef[];
   missionHighlight: Set<string>;
-  editMissions: boolean;
-  onMissionMove(id: string, x: number, y: number, done: boolean): void;
   items: PlanItem[];
   programs: Program[];
   activeProgramId: string | null;
@@ -85,7 +81,6 @@ const FieldView = forwardRef<FieldHandle, Props>(function FieldView(p, ref) {
     | { kind: "start"; programId: string; from: [number, number]; orig: Pose }
     | { kind: "rotate"; programId: string; orig: Pose }
     | { kind: "rotateItem"; id: string }
-    | { kind: "mission"; id: string; from: [number, number]; orig: [number, number] }
     | { kind: "erase" }
   >(null);
   const spaceDown = useRef(false);
@@ -201,7 +196,7 @@ const FieldView = forwardRef<FieldHandle, Props>(function FieldView(p, ref) {
     const [x, y] = toMm(e.clientX, e.clientY);
     const pan = e.button === 1 || spaceDown.current;
     (e.target as Element).setPointerCapture?.(e.pointerId);
-    if (pan || (p.tool === "select" && !p.editMissions)) {
+    if (pan || p.tool === "select") {
       if (!pan) p.onSelect(null);
       drag.current = { kind: "pan", sx: e.clientX, sy: e.clientY, v: view };
       return;
@@ -288,11 +283,6 @@ const FieldView = forwardRef<FieldHandle, Props>(function FieldView(p, ref) {
         p.onChange(d.id, { heading: a }, false);
         break;
       }
-      case "mission": {
-        const [nx, ny] = clampT(d.orig[0] + x - d.from[0], d.orig[1] + y - d.from[1]);
-        p.onMissionMove(d.id, Math.round(nx), Math.round(ny), false);
-        break;
-      }
       case "erase":
         break;
     }
@@ -323,15 +313,10 @@ const FieldView = forwardRef<FieldHandle, Props>(function FieldView(p, ref) {
       const it = p.items.find((i) => i.id === d.id);
       if (it) p.onChange(d.id, { heading: it.heading }, true);
     }
-    if (d.kind === "mission") {
-      const m = p.missions.find((x) => x.id === d.id);
-      if (m) p.onMissionMove(m.id, m.x, m.y, true);
-    }
   };
 
   // ───────── pointer handling on items ─────────
   const itemDown = (it: PlanItem) => (e: React.PointerEvent) => {
-    if (p.editMissions) return;
     if (p.tool === "eraser") {
       e.stopPropagation();
       p.onDelete(it.id);
@@ -348,7 +333,7 @@ const FieldView = forwardRef<FieldHandle, Props>(function FieldView(p, ref) {
   };
 
   const startDown = (pr: Program) => (e: React.PointerEvent) => {
-    if (p.tool !== "select" || p.editMissions) return;
+    if (p.tool !== "select") return;
     e.stopPropagation();
     (e.target as Element).setPointerCapture?.(e.pointerId);
     drag.current = { kind: "start", programId: pr.id, from: toMm(e.clientX, e.clientY), orig: { ...pr.start } };
@@ -358,15 +343,9 @@ const FieldView = forwardRef<FieldHandle, Props>(function FieldView(p, ref) {
     (e.target as Element).setPointerCapture?.(e.pointerId);
     drag.current = { kind: "rotate", programId: pr.id, orig: { ...pr.start } };
   };
-  const missionDown = (id: string, e: React.PointerEvent) => {
-    e.stopPropagation();
-    (e.target as Element).setPointerCapture?.(e.pointerId);
-    const m = p.missions.find((x) => x.id === id)!;
-    drag.current = { kind: "mission", id, from: toMm(e.clientX, e.clientY), orig: [m.x, m.y] };
-  };
 
   const cursor =
-    p.editMissions ? "default" : p.tool === "select" ? (drag.current?.kind === "pan" ? "grabbing" : "grab") : p.tool === "eraser" ? "cell" : p.tool === "text" ? "text" : "crosshair";
+    p.tool === "select" ? (drag.current?.kind === "pan" ? "grabbing" : "grab") : p.tool === "eraser" ? "cell" : p.tool === "text" ? "text" : "crosshair";
 
   const strokeFor = (w: number) => 4 + w * 3;
 
@@ -551,8 +530,8 @@ const FieldView = forwardRef<FieldHandle, Props>(function FieldView(p, ref) {
       role="application"
       aria-label="FLL table 2362 × 1143 mm"
     >
-      <MatLayer mode={p.mode} grid={p.grid} matImage={p.matImage} homeLabel={p.homeLabel} />
-      <MissionLayer missions={p.missions} mode={p.mode} editable={p.editMissions} highlight={p.missionHighlight} onDown={missionDown} />
+      <MatLayer mode={p.mode} grid={p.grid} />
+      <MissionLayer missions={p.missions} mode={p.mode} highlight={p.missionHighlight} />
       <g>{p.items.map(renderItem)}</g>
       {/* run trails */}
       {p.runs.map((r) => {
@@ -596,7 +575,7 @@ const FieldView = forwardRef<FieldHandle, Props>(function FieldView(p, ref) {
         );
       })}
       {draftEl}
-      {hover && p.tool !== "select" && p.tool !== "eraser" && !p.editMissions && hover[0] >= 0 && hover[1] >= 0 && hover[0] <= TABLE_W && hover[1] <= TABLE_H && (
+      {hover && p.tool !== "select" && p.tool !== "eraser" && hover[0] >= 0 && hover[1] >= 0 && hover[0] <= TABLE_W && hover[1] <= TABLE_H && (
         <circle cx={hover[0]} cy={hover[1]} r="6" fill={p.color} opacity="0.7" style={{ pointerEvents: "none" }} />
       )}
     </svg>
