@@ -53,11 +53,12 @@ interface MissionProps {
   missions: MissionDef[];
   mode: CardMode;
   highlight: Set<string>;
+  showNumbers: boolean;
 }
 
 /** Mission number badges (missions mode) and glow rings for the missions of the active program. */
-export const MissionLayer = memo(function MissionLayer({ missions, mode, highlight }: MissionProps) {
-  if (mode === "blank") return null;
+export const MissionLayer = memo(function MissionLayer({ missions, mode, highlight, showNumbers }: MissionProps) {
+  if (mode === "blank" || (mode === "missions" && !showNumbers)) return null;
   const s = BADGE_MM;
   return (
     <g style={{ pointerEvents: "none" }}>

@@ -181,6 +181,12 @@ interface DbSettings {
   turn_acceleration: number;
 }
 
+/** Pybricks motor target tolerances and low-gain zone (motor degrees, deg/s). */
+export const PB_POS_TOL = 10;
+export const PB_SPEED_TOL = 50;
+export const PB_KP_LOW_ERR = 5;
+export const PB_KP_LOW = 0.5;
+
 /** DriveBase controller gains, in motor-degree units like Pybricks' servos. */
 export const DB_GAINS = { kpS: 2.5, kdS: 0.15, kiS: 2, kpH: 12, kdH: 0.5, kiH: 3 };
 
@@ -582,14 +588,21 @@ export class Sim {
     const ffS = (100 * vRef * mmToDeg) / maxDegAtV;
     const ffH = (100 * wRef * hToDeg) / maxDegAtV;
     const fric = (100 * spec.frictionTorque) / (spec.stallTorque * this.d.kV);
-    const uS = ffS + g.kpS * eS * mmToDeg + g.kdS * (vRef - v) * mmToDeg + g.kiS * db.iS + (vRef !== 0 ? Math.sign(vRef) * fric : 0);
-    const uH = ffH + g.kpH * eH * hToDeg + g.kdH * (wRef - w) * hToDeg + g.kiH * db.iH + (wRef !== 0 ? Math.sign(wRef) * fric : 0);
+    // Like Pybricks: proportional gain drops to 50 % close to the target at low speed
+    // (less jitter while holding, but it can stop a little short).
+    const lowS = Math.abs(eS * mmToDeg) < PB_KP_LOW_ERR && Math.abs(vRef) < 1e-6 ? PB_KP_LOW : 1;
+    const lowH = Math.abs(eH * 2 * hToDeg) < PB_KP_LOW_ERR && Math.abs(wRef) < 1e-6 ? PB_KP_LOW : 1;
+    const uS = ffS + lowS * g.kpS * eS * mmToDeg + g.kdS * (vRef - v) * mmToDeg + g.kiS * db.iS + (vRef !== 0 ? Math.sign(vRef) * fric : 0);
+    const uH = ffH + lowH * g.kpH * eH * hToDeg + g.kdH * (wRef - w) * hToDeg + g.kiH * db.iH + (wRef !== 0 ? Math.sign(wRef) * fric : 0);
     db.left.duty = Math.max(-100, Math.min(100, uS + uH));
     db.right.duty = Math.max(-100, Math.min(100, uS - uH));
 
     if (!man.done && t >= man.end) {
-      const okS = Math.abs(eS * mmToDeg) < 6 && Math.abs(v * mmToDeg) < 30;
-      const okH = Math.abs(eH) < 0.6 && Math.abs(w) < 15;
+      // Pybricks declares a maneuver done once the trajectory is over and the
+      // error is inside the motors' target tolerance (10° of motor rotation,
+      // 50 °/s), measured on the sum / difference of the two wheel motors.
+      const okS = Math.abs(eS * mmToDeg) < PB_POS_TOL && Math.abs(v * mmToDeg) < PB_SPEED_TOL;
+      const okH = Math.abs(eH * 2 * hToDeg) < PB_POS_TOL && Math.abs(w * 2 * hToDeg) < PB_SPEED_TOL;
       if ((okS && okH) || t > man.end + 1.5) {
         man.done = true;
         if (man.then === "coast" || man.then === "brake") {

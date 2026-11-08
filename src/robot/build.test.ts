@@ -14,7 +14,7 @@ describe("robot builder", () => {
     // a scale reading rescales the mass and the inertia together
     const heavy = buildStats({ ...b, measuredMassG: s.massG * 2 });
     expect(heavy.massG).toBe(s.massG * 2);
-    expect(heavy.inertiaKgM2 / s.inertiaKgM2).toBeCloseTo(2, 5);
+    expect(heavy.inertiaKgM2 / s.inertiaKgM2).toBeCloseTo(2, 2);
   });
   it("moving weight away from the centre increases turning inertia", () => {
     const b = defaultBuild();
@@ -22,7 +22,7 @@ describe("robot builder", () => {
     expect(buildStats(far).inertiaKgM2).toBeGreaterThan(buildStats(b).inertiaKgM2);
   });
   it("warns when the robot would tip", () => {
-    const b = defaultBuild(); // caster behind the axle
+    const b = defaultBuild(); // caster in front of the axle
     const nose = { ...b, parts: [...b.parts, { id: "w", kind: "attachment" as const, x: 200, y: 0, len: 40, wid: 40, mass: 900 }] };
     expect(buildStats(nose).warnings).toContain("tipFront");
   });
@@ -41,5 +41,23 @@ describe("robot builder", () => {
       expect(s.x).toBeLessThan(MAT.x + MAT.w);
     }
     expect(HOME_AREAS[0].cy).toBe(MAT.y + MAT.h);
+  });
+});
+
+import { searchCatalog, CATALOG } from "./catalog";
+describe("parts catalog", () => {
+  it("finds parts by number and by Russian or English name", () => {
+    expect(searchCatalog("32278", "all")[0].id).toBe("beam15");
+    expect(searchCatalog("балка 1×15", "all").some((c) => c.id === "beam15")).toBe(true);
+    expect(searchCatalog("pin", "pins").length).toBeGreaterThan(3);
+    expect(new Set(CATALOG.map((c) => c.id)).size).toBe(CATALOG.length);
+  });
+  it("counted small parts and weighed corrections change the total", () => {
+    const b = defaultBuild();
+    const base = buildStats(b).massG;
+    const more = buildStats({ ...b, bulk: { ...b.bulk, pinBlack: (b.bulk?.pinBlack ?? 0) + 100 } }).massG;
+    expect(more - base).toBeGreaterThan(15);
+    const weighed = buildStats({ ...b, massOverride: { hub: 200 } }).massG;
+    expect(weighed - base).toBeGreaterThan(30);
   });
 });

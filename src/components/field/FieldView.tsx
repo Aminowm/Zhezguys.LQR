@@ -27,6 +27,7 @@ interface Props {
   grid: boolean;
   missions: MissionDef[];
   missionHighlight: Set<string>;
+  showMissionNumbers: boolean;
   items: PlanItem[];
   programs: Program[];
   activeProgramId: string | null;
@@ -531,7 +532,7 @@ const FieldView = forwardRef<FieldHandle, Props>(function FieldView(p, ref) {
       aria-label="FLL table 2362 × 1143 mm"
     >
       <MatLayer mode={p.mode} grid={p.grid} />
-      <MissionLayer missions={p.missions} mode={p.mode} highlight={p.missionHighlight} />
+      <MissionLayer missions={p.missions} mode={p.mode} highlight={p.missionHighlight} showNumbers={p.showMissionNumbers} />
       <g>{p.items.map(renderItem)}</g>
       {/* run trails */}
       {p.runs.map((r) => {

@@ -54,8 +54,8 @@ export default function RobotShape({ x, y, heading, profile, color, label, opaci
           .sort((p, q) => (p.kind === "frame" ? -1 : 0) - (q.kind === "frame" ? -1 : 0))
           .map((p) => {
             const fill =
-              p.kind === "frame" ? color : p.kind === "attachment" ? "#f59e0b" : p.kind === "hub" ? "#f4f2ec" : "#ffffff";
-            const op = p.kind === "frame" ? 0.22 : p.kind === "attachment" ? 0.55 : 1;
+              p.kind === "frame" ? color : p.kind === "attachment" ? "#f59e0b" : p.kind === "beam" ? "#3aa7e8" : p.kind === "brick" ? "#f2c230" : p.kind === "openFrame" ? "#e9edf6" : "#f5f6fa";
+            const op = p.kind === "frame" ? 0.22 : p.kind === "attachment" ? 0.55 : p.kind === "openFrame" ? 0.6 : 1;
             return (
               <g key={p.id}>
                 <rect x={p.x - p.len / 2} y={p.y - p.wid / 2} width={p.len} height={p.wid} rx={p.kind === "frame" ? 10 : 6} fill={fill} fillOpacity={op} stroke={p.kind === "frame" ? color : "#9a9484"} strokeWidth="2.5" />
