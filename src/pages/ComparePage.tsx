@@ -14,7 +14,7 @@ import LineChart from "../components/LineChart";
 import { TurnArena, StraightArena, ArenaRun } from "../components/Arena";
 
 type Test = "turn" | "straight";
-type Gains = "code" | "tuned";
+type Gains = "code" | "typical" | "tuned";
 
 interface Tuned {
   lqr: string;
@@ -24,6 +24,19 @@ interface Tuned {
 }
 
 const f3 = (x: number) => +x.toFixed(3);
+
+interface SeriesRow {
+  id: string;
+  label: string;
+  color: string;
+  mean: number;
+  max: number;
+  ms: number;
+  n: number;
+}
+
+const TURN_SERIES = [90, -90, 45, -45, 180, 30];
+const STRAIGHT_SERIES = [300, 600, 1000, 1600];
 
 interface Row {
   id: string;
@@ -40,7 +53,8 @@ export default function ComparePage() {
   const [angle, setAngle] = useState(90);
   const [dist, setDist] = useState(1000);
   const [robotSel, setRobotSel] = useState<"mine" | "default">(session ? "mine" : "default");
-  const [gains, setGains] = useState<Gains>("tuned");
+  const [gains, setGains] = useState<Gains>("typical");
+  const [series, setSeries] = useState<SeriesRow[] | null>(null);
   const [rows, setRows] = useState<Row[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -109,31 +123,59 @@ export default function ComparePage() {
     setBusy(true);
     setErr(null);
     try {
-      const tn = gains === "tuned" ? await getTuned() : null;
-      const deg = Math.round(mmToMotorDeg(dist, profile.wheelDiameterMm));
-      const progs: { id: string; label: string; color: string; body: string }[] =
-        test === "turn"
-          ? [
-              { id: "lqr", label: t("compare.lqr"), color: "var(--c-lqr)", body: `Gyro_reset(0)\nturn_lqr(${angle}${tn?.lqr ?? ""})\n` },
-              { id: "pid", label: t("compare.pid"), color: "var(--c-pid)", body: `Gyro_reset(0)\nturn_pid(${angle}${tn?.pid ?? ""})\n` },
-              {
-                id: "gyro",
-                label: t("compare.gyro"),
-                color: "var(--c-gyro)",
-                body: tn
-                  ? `Gyro_reset(0)\nDrive_base.settings(turn_rate=${tn.gyro.rate}, turn_acceleration=${tn.gyro.acc})\nDrive_base.turn(${angle})\nDrive_base.stop()\n`
-                  : `Gyro_reset(0)\nturn_gyro(${angle})\n`,
-              },
-            ]
-          : [
-              { id: "lqr", label: t("compare.lqr"), color: "var(--c-lqr)", body: `Gyro_reset(0)\nstraight_lqr(${deg}, 60, 0${tn?.straight ?? ""})\n` },
-              { id: "pid", label: t("compare.pid"), color: "var(--c-pid)", body: `Gyro_reset(0)\nstraight_pid(${deg}, 60, 0)\n` },
-              { id: "gyro", label: t("compare.gyro"), color: "var(--c-gyro)", body: `Gyro_reset(0)\nstraight_gyro(${dist})\n` },
-              { id: "open", label: t("compare.openLoop"), color: "var(--muted)", body: `move_deg(60, 60, ${deg})\n` },
-            ];
-      const start = test === "turn" ? { x: 1181, y: 571, headingDeg: 0 } : { x: 250, y: 571, headingDeg: 0 };
-      const outs = await runJobs(progs.map((p) => ({ code: buildProgram(files, p.body).code, profile, start, maxTimeMs: 20000, walls: false })));
-      setRows(progs.map((p, i) => ({ id: p.id, label: p.label, color: p.color, out: outs[i] })));
+      // code: everything as written in the team's code
+      // typical: LQR gets its gains from the robot model (that is how LQR works),
+      //          PID and the Pybricks gyro run as written in the code
+      // tuned: all three auto-tuned for this robot
+      const tn = gains !== "code" ? await getTuned() : null;
+      const all = gains === "tuned";
+      const turnProgs = (a: number) => [
+        { id: "lqr", label: t("compare.lqr"), color: "var(--c-lqr)", body: `Gyro_reset(0)\nturn_lqr(${a}${tn?.lqr ?? ""})\n` },
+        { id: "pid", label: t("compare.pid"), color: "var(--c-pid)", body: `Gyro_reset(0)\nturn_pid(${a}${all ? tn!.pid : ""})\n` },
+        {
+          id: "gyro",
+          label: t("compare.gyro"),
+          color: "var(--c-gyro)",
+          body: all
+            ? `Gyro_reset(0)\nDrive_base.settings(turn_rate=${tn!.gyro.rate}, turn_acceleration=${tn!.gyro.acc})\nDrive_base.turn(${a})\nDrive_base.stop()\n`
+            : `Gyro_reset(0)\nturn_gyro(${a})\n`,
+        },
+      ];
+      const straightProgs = (mm: number) => {
+        const deg = Math.round(mmToMotorDeg(mm, profile.wheelDiameterMm));
+        return [
+          { id: "lqr", label: t("compare.lqr"), color: "var(--c-lqr)", body: `Gyro_reset(0)\nstraight_lqr(${deg}, 60, 0${tn?.straight ?? ""})\n` },
+          { id: "pid", label: t("compare.pid"), color: "var(--c-pid)", body: `Gyro_reset(0)\nstraight_pid(${deg}, 60, 0)\n` },
+          { id: "gyro", label: t("compare.gyro"), color: "var(--c-gyro)", body: `Gyro_reset(0)\nstraight_gyro(${mm})\n` },
+          { id: "open", label: t("compare.openLoop"), color: "var(--muted)", body: `move_deg(60, 60, ${deg})\n` },
+        ];
+      };
+      const isTurn = test === "turn";
+      const start = isTurn ? { x: 1181, y: 571, headingDeg: 0 } : { x: 250, y: 571, headingDeg: 0 };
+      const main = isTurn ? turnProgs(angle) : straightProgs(dist);
+      const seriesSpec = (isTurn ? TURN_SERIES : STRAIGHT_SERIES).flatMap((v, i) =>
+        (isTurn ? turnProgs(v) : straightProgs(v)).map((p) => ({ ...p, target: v, seed: 101 + i })),
+      );
+      const jobs = [
+        ...main.map((p) => ({ code: buildProgram(files, p.body).code, profile, start, maxTimeMs: 20000, walls: false })),
+        ...seriesSpec.map((p) => ({ code: buildProgram(files, p.body).code, profile, start, maxTimeMs: 20000, walls: false, seed: p.seed })),
+      ];
+      const outs = await runJobs(jobs);
+      setRows(main.map((p, i) => ({ id: p.id, label: p.label, color: p.color, out: outs[i] })));
+      const acc = new Map<string, SeriesRow>();
+      seriesSpec.forEach((p, i) => {
+        const out = outs[main.length + i];
+        const f = out.frames;
+        const n = f.t.length - 1;
+        const err = isTurn ? Math.abs(f.h[n] - f.h[0] - p.target) : Math.abs(f.y[n] - f.y[0]);
+        const r = acc.get(p.id) ?? { id: p.id, label: p.label, color: p.color, mean: 0, max: 0, ms: 0, n: 0 };
+        r.mean += err;
+        r.max = Math.max(r.max, err);
+        r.ms += out.programEndMs;
+        r.n += 1;
+        acc.set(p.id, r);
+      });
+      setSeries([...acc.values()].map((r) => ({ ...r, mean: r.mean / r.n, ms: r.ms / r.n })).sort((a, b) => a.mean - b.mean));
       setTime(0);
       setPlaying(true);
     } catch (e) {
@@ -242,6 +284,7 @@ export default function ComparePage() {
           <div className="field">
             <span className="label">{t("compare.gains")}</span>
             <div className="seg" role="group" aria-label={t("compare.gains")}>
+              <button aria-pressed={gains === "typical"} onClick={() => setGains("typical")}>{t("compare.gainsTypical")}</button>
               <button aria-pressed={gains === "code"} onClick={() => setGains("code")}>{t("compare.gainsCode")}</button>
               <button aria-pressed={gains === "tuned"} onClick={() => setGains("tuned")}>{t("compare.gainsTuned")}</button>
             </div>
@@ -250,6 +293,9 @@ export default function ComparePage() {
             {busy ? <Loader2 size={18} className="spin" /> : <Play size={18} />} {t("compare.run")}
           </button>
         </div>
+        <p className="small muted" style={{ margin: "12px 0 0" }}>
+          {gains === "typical" ? t("compare.hintTypical") : gains === "code" ? t("compare.hintCode") : t("compare.hintTuned")}
+        </p>
         {!session && (
           <div className="banner small" style={{ marginTop: 14 }}>
             <Info size={16} /> <span>{t("compare.loginHint")} <Link to="/register">{t("nav.register")}</Link></span>
@@ -274,6 +320,7 @@ export default function ComparePage() {
 
       {rows && (
         <motion.div className="stack" style={{ gap: 18 }} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
+          {series && <AccuracyCard rows={series} turn={testAngle} />}
           <div className="row spread">
             <span className="small muted num">{(time / 1000).toFixed(2)} s</span>
             <button className="btn sm" onClick={() => { setTime(0); setPlaying(true); }}><RotateCcw size={15} /> {t("landing.replay")}</button>
@@ -356,6 +403,42 @@ export default function ComparePage() {
           </div>
         </motion.div>
       )}
+    </div>
+  );
+}
+
+function AccuracyCard({ rows, turn }: { rows: SeriesRow[]; turn: boolean }) {
+  const t = useT();
+  const shown = rows.filter((r) => r.id !== "open" || !turn);
+  const max = Math.max(...shown.map((r) => r.max), turn ? 1 : 5);
+  const unit = turn ? "°" : " mm";
+  const fmt = (v: number) => (turn ? v.toFixed(2) : v.toFixed(1)) + unit;
+  return (
+    <div className="card">
+      <div className="row spread wrap" style={{ marginBottom: 6 }}>
+        <h3 style={{ margin: 0 }}>{turn ? t("compare.accTurn") : t("compare.accStraight")}</h3>
+        <span className="tiny muted">{turn ? TURN_SERIES.map((a) => `${a}°`).join(" · ") : STRAIGHT_SERIES.map((d) => `${d} mm`).join(" · ")}</span>
+      </div>
+      <p className="small muted" style={{ marginTop: 0 }}>{t("compare.accHint")}</p>
+      <div className="stack" style={{ gap: 12 }} role="list">
+        {shown.map((r, i) => (
+          <div key={r.id} role="listitem" style={{ display: "grid", gridTemplateColumns: "minmax(110px, 170px) minmax(0, 1fr) auto", gap: 12, alignItems: "center" }}>
+            <span className="row small" style={{ gap: 8, fontWeight: 600 }}>
+              <span className="rank">{i + 1}</span>
+              {r.label}
+            </span>
+            <div style={{ position: "relative", height: 22 }} aria-hidden>
+              <div style={{ position: "absolute", inset: "7px 0", borderRadius: 99, background: "var(--surface-3)" }} />
+              <div style={{ position: "absolute", left: 0, top: 3, height: 16, width: `${Math.max(2, (r.mean / max) * 100)}%`, borderRadius: "4px 8px 8px 4px", background: r.color }} />
+              <div title={t("compare.maxErr")} style={{ position: "absolute", left: `calc(${(r.max / max) * 100}% - 1px)`, top: 0, height: 22, width: 2, borderRadius: 2, background: "var(--ink-2)" }} />
+            </div>
+            <span className="small num" style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+              <strong>{fmt(r.mean)}</strong> <span className="muted">· {t("compare.maxErr")} {fmt(r.max)} · {Math.round(r.ms)} ms</span>
+              {i === 0 && <Trophy size={14} style={{ marginLeft: 6, verticalAlign: "-2px", color: "var(--gold)" }} aria-label={t("compare.best")} />}
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
