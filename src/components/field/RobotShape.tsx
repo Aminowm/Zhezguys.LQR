@@ -94,7 +94,7 @@ export default function RobotShape({ x, y, heading, profile, color, label, opaci
       {body}
       <path d={`M ${front + 4} 0 L ${front - 30} -20 L ${front - 30} 20 Z`} fill={color} stroke="#ffffff" strokeWidth="3" />
       {label && (
-        <text x={-back + 18} y={minY - 16} fontSize="40" fontWeight="700" fill={color} transform={`rotate(${-heading} ${-back + 18} ${minY - 16})`} style={{ paintOrder: "stroke", stroke: "var(--surface)", strokeWidth: 10 }}>
+        <text x={-back + 18} y={minY - 16} fontSize="40" fontWeight="700" fill={color} transform={`rotate(${-heading} ${-back + 18} ${minY - 16})`} style={{ paintOrder: "stroke", stroke: "var(--surface-solid)", strokeWidth: 10 }}>
           {label}
         </text>
       )}

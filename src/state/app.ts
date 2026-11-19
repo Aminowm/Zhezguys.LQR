@@ -49,9 +49,9 @@ function applyTheme(t: Theme) {
 function savedTheme(): Theme {
   try {
     const t = localStorage.getItem("zg.theme") as Theme | null;
-    return t === "light" || t === "dark" ? t : "system";
+    return t === "light" ? "light" : "dark";
   } catch {
-    return "system";
+    return "dark";
   }
 }
 

@@ -83,7 +83,7 @@ export function StraightArena({ runs, distance, time, exaggerate = 10, profile =
           const h = at(r.h, r.t, time);
           return (
             <g key={r.id}>
-              <rect x={-150} y={laneH * i + 4} width={W} height={laneH - 8} rx="14" fill="var(--surface)" />
+              <rect x={-150} y={laneH * i + 4} width={W} height={laneH - 8} rx="14" fill="var(--surface-solid)" />
               <line x1={0} y1={y0} x2={distance} y2={y0} stroke="var(--border-strong)" strokeWidth="3" strokeDasharray="14 10" />
               <line x1={distance} y1={laneH * i + 14} x2={distance} y2={laneH * (i + 1) - 14} stroke="var(--ink)" strokeWidth="3" />
               <path d={d} fill="none" stroke={r.color} strokeWidth="6" strokeLinecap="round" />
