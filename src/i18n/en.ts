@@ -231,11 +231,11 @@ export const en = {
   "code.files": "Library",
   "code.programs": "Programs",
   "code.export": "Export for hub",
-  "code.exportHint": "One .py file: config + library + this program. Open it in Pybricks Code and run it on the hub.",
+  "code.exportHint": "One main.py with the whole library and a menu of all your programs. Open it in Pybricks Code and run it on the hub.",
   "code.resetFile": "Reset to Zhezguys default",
   "code.resetConfirm": "Replace {file} with the default code? Your changes in this file will be lost.",
   "code.runOnTable": "Run on table",
-  "code.order": "Run order: config → helpers → lqr → pid → program",
+  "code.order": "Order on the hub: config → helpers → lqr → pid → menu",
   "code.readonlyGuest": "Log in to edit your own copy of this code.",
 
   "compare.title": "LQR vs PID vs Pybricks gyro",
@@ -387,6 +387,15 @@ export const en = {
   "robot.meanErr": "Average final error",
   "robot.straightTitle": "Driving straight (600 and 1200 mm, NORMAL)",
   "compare.oldCode": "Your code still uses the old functions (turn_lqr …), so the comparison uses the new starter library with your robot. Reset the files on the Code page to switch.",
+
+  "code.hub": "Hub",
+  "code.menu": "menu",
+  "code.mainHint": "What goes on the hub: library + a menu with all programs",
+  "code.mainReadonly": "Built automatically from the library and Programs 1–9. LEFT/RIGHT choose a program on the hub, CENTER runs it, prg 0 shows the battery. Edit the files and programs, then copy or download this file into Pybricks Code.",
+  "code.prgHint": "This is the body of prg {n} in the hub menu. TARGET starts at 0 and turn() angles add up.",
+  "table.maxPrograms": "A hub menu holds up to {n} programs",
+  "builder.attName": "Attachment name",
+  "builder.zShort": "Height",
 };
 
 export type Dict = typeof en;

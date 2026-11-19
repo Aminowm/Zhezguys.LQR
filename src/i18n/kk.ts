@@ -231,11 +231,11 @@ export const kk: Partial<Dict> = {
   "code.files": "Кітапхана",
   "code.programs": "Бағдарламалар",
   "code.export": "Хабқа экспорттау",
-  "code.exportHint": "Бір .py файл: config + кітапхана + осы бағдарлама. Оны Pybricks Code-та ашып, хабта іске қосыңыз.",
+  "code.exportHint": "Бүкіл кітапхана мен барлық бағдарламаларыңыздың мәзірі бар бір main.py. Оны Pybricks Code-та ашып, хабта іске қосыңыз.",
   "code.resetFile": "Zhezguys кодын қайтару",
   "code.resetConfirm": "{file} әдепкі кодпен ауыстырылсын ба? Бұл файлдағы өзгерістеріңіз жоғалады.",
   "code.runOnTable": "Алаңда іске қосу",
-  "code.order": "Реті: config → helpers → lqr → pid → бағдарлама",
+  "code.order": "Хабтағы рет: config → helpers → lqr → pid → мәзір",
   "code.readonlyGuest": "Кодтың өз көшірмеңізді өңдеу үшін кіріңіз.",
 
   "compare.title": "LQR, PID және Pybricks гироскопы",
@@ -387,4 +387,13 @@ export const kk: Partial<Dict> = {
   "robot.meanErr": "Орташа соңғы қате",
   "robot.straightTitle": "Түзу жүру (600 және 1200 мм, NORMAL)",
   "compare.oldCode": "Кодыңыз әлі ескі функцияларда (turn_lqr …), сондықтан салыстыру роботыңызбен жаңа кітапханада жүреді. Ауысу үшін «Код» бетінде файлдарды қалпына келтіріңіз.",
+
+  "code.hub": "Хаб",
+  "code.menu": "мәзір",
+  "code.mainHint": "Хабқа не кетеді: кітапхана + барлық бағдарламалар мәзірі",
+  "code.mainReadonly": "Кітапхана мен 1–9 бағдарламалардан автоматты құрастырылады. Хабта LEFT/RIGHT бағдарламаны таңдайды, CENTER іске қосады, prg 0 батареяны көрсетеді. Файлдар мен бағдарламаларды өзгертіп, осы файлды Pybricks Code-қа көшіріңіз не жүктеп алыңыз.",
+  "code.prgHint": "Бұл хаб мәзіріндегі prg {n} денесі. TARGET 0-ден басталады, turn() бұрыштары қосылады.",
+  "table.maxPrograms": "Хаб мәзіріне {n} бағдарламаға дейін сыяды",
+  "builder.attName": "Қондырма атауы",
+  "builder.zShort": "Биіктік",
 };

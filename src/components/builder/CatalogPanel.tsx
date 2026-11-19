@@ -3,6 +3,7 @@ import { Search, Plus, Minus, Check, Package } from "lucide-react";
 import { useLang, useT, DictKey } from "../../i18n";
 import { CATALOG_BY_ID, CATS, Cat, CatalogItem, partMass, searchCatalog } from "../../robot/catalog";
 import { massOfPart, newPartFromCatalog, RobotBuild } from "../../robot/build";
+import NumInput from "../ui/NumInput";
 
 const fmtG = (g: number) => (g >= 10 ? g.toFixed(0) : g >= 1 ? g.toFixed(1) : g.toFixed(2));
 
@@ -48,12 +49,13 @@ export default function CatalogPanel({ value: b, onChange, onSelect }: { value: 
 
   // "In the robot": placed parts grouped by catalog id + counted small parts
   const placedGroups = useMemo(() => {
-    const m = new Map<string, { key: string; label: string; num: string; n: number; mass: number; catalogId?: string }>();
+    const m = new Map<string, { key: string; label: string; num: string; n: number; mass: number; catalogId?: string; partId?: string; own?: boolean }>();
     for (const p of b.parts) {
+      const own = p.kind === "attachment" || !p.catalogId;
       const c = p.catalogId ? CATALOG_BY_ID[p.catalogId] : undefined;
-      const key = p.catalogId ?? p.kind + ":" + p.id;
+      const key = own ? p.kind + ":" + p.id : p.catalogId!;
       const label = c ? name(c) : p.kind === "frame" ? name(CATALOG_BY_ID.chassis) : name(CATALOG_BY_ID.block);
-      const g = m.get(key) ?? { key, label, num: c?.num ?? "", n: 0, mass: 0, catalogId: p.catalogId };
+      const g = m.get(key) ?? { key, label: p.name || label, num: c?.num ?? "", n: 0, mass: 0, catalogId: p.catalogId, partId: p.id, own: own && p.kind !== "frame" };
       g.n += 1;
       g.mass += massOfPart(p, b);
       m.set(key, g);
@@ -108,7 +110,22 @@ export default function CatalogPanel({ value: b, onChange, onSelect }: { value: 
           <div key={g.key} className="bom-row">
             <span className="catalog-name" style={{ flex: 1 }}>{g.label}{g.num && <span className="tiny muted"> #{g.num}</span>}</span>
             <span className="num small">×{g.n}</span>
-            <span className="num small muted" style={{ width: 64, textAlign: "right" }}>{fmtG(g.mass)} g</span>
+            {g.own ? (
+              <span className="unit-input" style={{ width: 84 }} title={t("builder.mass")}>
+                <NumInput
+                  className="input num"
+                  style={{ minHeight: 30, padding: "4px 26px 4px 8px", fontSize: 12.5 }}
+                  aria-label={`${g.label} — ${t("builder.mass")}`}
+                  min={0.01}
+                  max={3000}
+                  value={g.mass}
+                  onCommit={(v) => v && v > 0 && onChange({ ...b, parts: b.parts.map((p) => (p.id === g.partId ? { ...p, mass: v } : p)) })}
+                />
+                <span style={{ right: 8, fontSize: 11 }}>g</span>
+              </span>
+            ) : (
+              <span className="num small muted" style={{ width: 84, textAlign: "right" }}>{fmtG(g.mass)} g</span>
+            )}
           </div>
         ))}
         {Object.entries(bulk).map(([id, n]) => {
@@ -123,14 +140,15 @@ export default function CatalogPanel({ value: b, onChange, onSelect }: { value: 
                 <button type="button" aria-label="+" onClick={() => setQty(id, n + 1)}><Plus size={13} /></button>
               </span>
               <span className="unit-input" style={{ width: 84 }} title={t("builder.weighed")}>
-                <input
+                <NumInput
                   className="input num"
                   style={{ minHeight: 30, padding: "4px 26px 4px 8px", fontSize: 12.5 }}
-                  type="number"
-                  step="0.01"
                   aria-label={t("builder.weighed")}
+                  min={0.01}
+                  max={3000}
+                  allowEmpty
                   value={b.massOverride?.[id] ?? c.mass}
-                  onChange={(e) => setOverride(id, e.target.value === "" ? null : Number(e.target.value))}
+                  onCommit={(v) => setOverride(id, v ?? null)}
                 />
                 <span style={{ right: 8, fontSize: 11 }}>g</span>
               </span>

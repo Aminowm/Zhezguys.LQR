@@ -231,11 +231,11 @@ export const ru: Partial<Dict> = {
   "code.files": "Библиотека",
   "code.programs": "Программы",
   "code.export": "Экспорт для хаба",
-  "code.exportHint": "Один файл .py: config + библиотека + эта программа. Откройте его в Pybricks Code и запустите на хабе.",
+  "code.exportHint": "Один main.py со всей библиотекой и меню из всех ваших программ. Откройте его в Pybricks Code и запустите на хабе.",
   "code.resetFile": "Вернуть код Zhezguys",
   "code.resetConfirm": "Заменить {file} кодом по умолчанию? Ваши изменения в этом файле пропадут.",
   "code.runOnTable": "Запустить на поле",
-  "code.order": "Порядок: config → helpers → lqr → pid → программа",
+  "code.order": "Порядок на хабе: config → helpers → lqr → pid → меню",
   "code.readonlyGuest": "Войдите, чтобы редактировать свою копию кода.",
 
   "compare.title": "LQR против PID и гироскопа Pybricks",
@@ -387,4 +387,13 @@ export const ru: Partial<Dict> = {
   "robot.meanErr": "Средняя итоговая ошибка",
   "robot.straightTitle": "Езда прямо (600 и 1200 мм, NORMAL)",
   "compare.oldCode": "Ваш код ещё на старых функциях (turn_lqr …), поэтому сравнение идёт на новой библиотеке с вашим роботом. Чтобы перейти, сбросьте файлы на странице «Код».",
+
+  "code.hub": "Хаб",
+  "code.menu": "меню",
+  "code.mainHint": "Что уходит на хаб: библиотека + меню со всеми программами",
+  "code.mainReadonly": "Собирается автоматически из библиотеки и программ 1–9. На хабе LEFT/RIGHT выбирают программу, CENTER запускает, prg 0 показывает батарею. Меняйте файлы и программы, потом скопируйте или скачайте этот файл в Pybricks Code.",
+  "code.prgHint": "Это тело prg {n} в меню хаба. TARGET начинается с 0, углы turn() складываются.",
+  "table.maxPrograms": "В меню хаба помещается до {n} программ",
+  "builder.attName": "Название насадки",
+  "builder.zShort": "Высота",
 };

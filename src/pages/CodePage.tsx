@@ -1,12 +1,12 @@
 import { useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "motion/react";
-import { FileCode2, Download, Copy, RotateCcw, Play, Plus, Check } from "lucide-react";
+import { FileCode2, Download, Copy, RotateCcw, Play, Plus, Check, Cpu, Lock } from "lucide-react";
 import { useApp } from "../state/app";
 import { useT } from "../i18n";
 import CodeEditor from "../components/CodeEditor";
-import { buildProgram, CodeFileId, DEFAULT_FILES, FILE_NAMES, FILE_ORDER } from "../code/defaults";
-import { newProgram } from "../state/workspace";
+import { buildHubProgram, CodeFileId, DEFAULT_FILES, FILE_NAMES, FILE_ORDER, MAX_PROGRAMS } from "../code/defaults";
+import { canAddProgram, newProgram } from "../state/workspace";
 
 export default function CodePage() {
   const t = useT();
@@ -20,6 +20,7 @@ export default function CodePage() {
 
   const sel = useMemo(() => {
     if (!ws) return null;
+    if (fileParam === ("main" as CodeFileId)) return { kind: "main" as const, id: "main" };
     if (fileParam && FILE_ORDER.includes(fileParam)) return { kind: "file" as const, id: fileParam };
     const p = ws.programs.find((x) => x.id === progParam) ?? ws.programs[0];
     return p ? { kind: "program" as const, id: p.id } : { kind: "file" as const, id: "lqr" as CodeFileId };
@@ -27,17 +28,20 @@ export default function CodePage() {
 
   if (!ws || !sel) return null;
   const program = sel.kind === "program" ? ws.programs.find((p) => p.id === sel.id)! : ws.programs[0];
-  const value = sel.kind === "file" ? ws.files[sel.id] : program.code;
+  const prgNo = sel.kind === "program" ? ws.programs.indexOf(program) + 1 : 0;
+  const hub = buildHubProgram(ws.files, ws.programs);
+  const value = sel.kind === "main" ? hub : sel.kind === "file" ? ws.files[sel.id] : program.code;
   const onChange = (v: string) =>
     update((w) =>
       sel.kind === "file"
         ? { ...w, files: { ...w.files, [sel.id]: v } }
-        : { ...w, programs: w.programs.map((p) => (p.id === sel.id ? { ...p, code: v } : p)) },
+        : sel.kind === "program"
+          ? { ...w, programs: w.programs.map((p) => (p.id === sel.id ? { ...p, code: v } : p)) }
+          : w,
     );
 
-  const combined = () => buildProgram(ws.files, program?.code ?? "").code;
-  const fileTitle = sel.kind === "file" ? FILE_NAMES[sel.id] : program.name;
-  const exportName = (program?.name || "program").replace(/[^\w\-]+/g, "_").toLowerCase() + ".py";
+  const fileTitle = sel.kind === "main" ? "main.py" : sel.kind === "file" ? FILE_NAMES[sel.id] : `prg ${prgNo} · ${program.name}`;
+  const canAdd = canAddProgram(ws);
 
   const item = (active: boolean, onClick: () => void, label: string, dot?: string) => (
     <button
@@ -55,17 +59,30 @@ export default function CodePage() {
     <div className="page wide">
       <div style={{ display: "grid", gridTemplateColumns: "230px minmax(0,1fr)", gap: 16 }} className="code-grid">
         <aside className="card flat" style={{ padding: 10, alignSelf: "start" }}>
+          <div className="label" style={{ padding: "6px 8px" }}>{t("code.hub")}</div>
+          <button
+            onClick={() => setParams({ f: "main" })}
+            className="btn ghost sm"
+            aria-current={sel.kind === "main" ? "page" : undefined}
+            style={{ justifyContent: "flex-start", width: "100%", background: sel.kind === "main" ? "var(--primary-soft)" : undefined, color: sel.kind === "main" ? "var(--primary)" : undefined }}
+          >
+            <Cpu size={15} /> main.py <span className="tiny muted" style={{ marginLeft: "auto" }}>{t("code.menu")}</span>
+          </button>
+          <div className="divider" style={{ margin: "10px 0" }} />
           <div className="label" style={{ padding: "6px 8px" }}>{t("code.files")}</div>
           <div className="stack" style={{ gap: 2 }}>
             {FILE_ORDER.map((f) => item(sel.kind === "file" && sel.id === f, () => setParams({ f }), FILE_NAMES[f]))}
           </div>
           <div className="divider" style={{ margin: "10px 0" }} />
           <div className="row spread" style={{ padding: "0 8px" }}>
-            <span className="label">{t("code.programs")}</span>
+            <span className="label">{t("code.programs")} <span className="muted">{ws.programs.length}/{MAX_PROGRAMS}</span></span>
             <button
               className="icon-btn sm"
               aria-label={t("table.addProgram")}
+              title={canAdd ? t("table.addProgram") : t("table.maxPrograms", { n: MAX_PROGRAMS })}
+              disabled={!canAdd}
               onClick={() => {
+                if (!canAdd) return;
                 const p = newProgram(ws.programs.length, t("table.program", { n: ws.programs.length + 1 }));
                 update((w) => ({ ...w, programs: [...w.programs, p] }));
                 setParams({ p: p.id });
@@ -75,14 +92,14 @@ export default function CodePage() {
             </button>
           </div>
           <div className="stack" style={{ gap: 2 }}>
-            {ws.programs.map((p) => item(sel.kind === "program" && sel.id === p.id, () => setParams({ p: p.id }), p.name, p.color))}
+            {ws.programs.map((p, i) => item(sel.kind === "program" && sel.id === p.id, () => setParams({ p: p.id }), `${i + 1} · ${p.name}`, p.color))}
           </div>
         </aside>
         <motion.section key={sel.kind + sel.id} className="stack" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
           <div className="row spread wrap">
             <div>
               <h2 style={{ margin: 0 }}>{fileTitle}</h2>
-              <div className="tiny muted">{t("code.order")}</div>
+              <div className="tiny muted">{sel.kind === "main" ? t("code.mainHint") : sel.kind === "program" ? t("code.prgHint", { n: prgNo }) : t("code.order")}</div>
             </div>
             <div className="row wrap">
               {sel.kind === "file" && (
@@ -98,7 +115,7 @@ export default function CodePage() {
               <button
                 className="btn sm"
                 onClick={async () => {
-                  await navigator.clipboard.writeText(combined());
+                  await navigator.clipboard.writeText(hub);
                   setCopied(true);
                   setTimeout(() => setCopied(false), 1500);
                 }}
@@ -111,8 +128,8 @@ export default function CodePage() {
                 title={t("code.exportHint")}
                 onClick={() => {
                   const a = document.createElement("a");
-                  a.href = URL.createObjectURL(new Blob([combined()], { type: "text/x-python" }));
-                  a.download = exportName;
+                  a.href = URL.createObjectURL(new Blob([hub], { type: "text/x-python" }));
+                  a.download = "main.py";
                   a.click();
                 }}
               >
@@ -123,7 +140,10 @@ export default function CodePage() {
               </button>
             </div>
           </div>
-          <CodeEditor value={value} onChange={onChange} height="calc(100vh - 210px)" errorLine={line} label={fileTitle} />
+          {sel.kind === "main" && (
+            <div className="note row" style={{ gap: 8 }}><Lock size={15} /> {t("code.mainReadonly")}</div>
+          )}
+          <CodeEditor value={value} onChange={onChange} readOnly={sel.kind === "main"} height="calc(100vh - 210px)" errorLine={sel.kind === "main" ? null : line} label={fileTitle} />
           <p className="tiny muted" style={{ margin: 0 }}>{t("code.exportHint")}</p>
         </motion.section>
       </div>

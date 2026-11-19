@@ -9,6 +9,7 @@ import {
 } from "../robot/build";
 import { CATALOG_BY_ID } from "../robot/catalog";
 import CatalogPanel, { useItemName } from "./builder/CatalogPanel";
+import NumInput from "./ui/NumInput";
 
 const Robot3D = lazy(() => import("./builder/Robot3D"));
 
@@ -238,7 +239,9 @@ export default function RobotBuilder({ value: b, onChange }: Props) {
     highCom: "builder.warn.highCom",
   };
   const selName = selected
-    ? selected.catalogId && CATALOG_BY_ID[selected.catalogId]
+    ? selected.name
+      ? selected.name
+      : selected.catalogId && CATALOG_BY_ID[selected.catalogId]
       ? name(CATALOG_BY_ID[selected.catalogId])
       : selected.kind === "frame"
         ? name(CATALOG_BY_ID.chassis)
@@ -291,36 +294,46 @@ export default function RobotBuilder({ value: b, onChange }: Props) {
                 </div>
               </div>
               <div className="row wrap" style={{ gap: 10, marginTop: 10 }}>
+                {selected.kind === "attachment" && (
+                  <div className="field" style={{ flex: "1 1 160px" }}>
+                    <label htmlFor="pn">{t("builder.attName")}</label>
+                    <input id="pn" className="input" maxLength={40} value={selected.name ?? ""} placeholder={selName} onChange={(e) => setPart(selected.id, { name: e.target.value || undefined })} />
+                  </div>
+                )}
                 <div className="field" style={{ width: 130 }}>
-                  <label htmlFor="pm">{selected.catalogId ? t("builder.weighed") : t("builder.mass")}</label>
+                  <label htmlFor="pm">{selected.kind !== "attachment" && selected.catalogId ? t("builder.weighed") : t("builder.mass")}</label>
                   <div className="unit-input">
-                    <input
+                    <NumInput
                       id="pm"
                       className="input num"
-                      type="number"
-                      step="0.01"
-                      min={0}
+                      min={0.01}
+                      max={3000}
                       disabled={selected.kind === "frame"}
                       value={massOfPart(selected, b)}
-                      onChange={(e) => {
-                        const v = Number(e.target.value);
-                        if (!(v > 0)) return;
-                        if (selected.catalogId) onChange({ ...b, massOverride: { ...(b.massOverride ?? {}), [selected.catalogId]: v } });
+                      onCommit={(v) => {
+                        if (v === undefined || !(v > 0)) return;
+                        // attachments and parts without a catalog number keep their own mass;
+                        // catalog parts share a "weighed" mass for every copy
+                        if (selected.kind !== "attachment" && selected.catalogId) onChange({ ...b, massOverride: { ...(b.massOverride ?? {}), [selected.catalogId]: v } });
                         else setPart(selected.id, { mass: v });
                       }}
                     />
                     <span>g</span>
                   </div>
                 </div>
+                <div className="field" style={{ width: 96 }}>
+                  <label htmlFor="pz" title={t("builder.height")}>{t("builder.zShort")}</label>
+                  <div className="unit-input"><NumInput id="pz" className="input num" min={0} max={300} digits={0} value={Math.round(partZ(selected, b))} onCommit={(v) => v !== undefined && setPart(selected.id, { z: v })} /><span>mm</span></div>
+                </div>
                 {PART_SPECS[selected.kind].resizable && (
                   <>
                     <div className="field" style={{ width: 110 }}>
                       <label htmlFor="pl">{t("builder.len")}</label>
-                      <div className="unit-input"><input id="pl" className="input num" type="number" min={16} max={320} step={8} value={selected.len} onChange={(e) => { const v = Number(e.target.value); if (v >= 8) setPart(selected.id, { len: v }); }} /><span>mm</span></div>
+                      <div className="unit-input"><NumInput id="pl" className="input num" min={8} max={400} digits={0} value={selected.len} onCommit={(v) => v && setPart(selected.id, { len: v })} /><span>mm</span></div>
                     </div>
                     <div className="field" style={{ width: 110 }}>
                       <label htmlFor="pw2">{t("builder.wid")}</label>
-                      <div className="unit-input"><input id="pw2" className="input num" type="number" min={16} max={320} step={8} value={selected.wid} onChange={(e) => { const v = Number(e.target.value); if (v >= 8) setPart(selected.id, { wid: v }); }} /><span>mm</span></div>
+                      <div className="unit-input"><NumInput id="pw2" className="input num" min={8} max={400} digits={0} value={selected.wid} onCommit={(v) => v && setPart(selected.id, { wid: v })} /><span>mm</span></div>
                     </div>
                   </>
                 )}
@@ -360,15 +373,15 @@ export default function RobotBuilder({ value: b, onChange }: Props) {
               <div className="grid-2" style={{ gap: 10 }}>
                 <div className="field">
                   <label htmlFor="wd2">{t("robot.wheelDiameter")}</label>
-                  <div className="unit-input"><input id="wd2" className="input num" type="number" min={30} max={150} step={0.1} value={b.wheelDiameterMm} onChange={(e) => { const v = Number(e.target.value); if (v >= 30 && v <= 150) onChange({ ...b, wheelDiameterMm: v, wheelId: undefined }); }} /><span>mm</span></div>
+                  <div className="unit-input"><NumInput id="wd2" className="input num" min={30} max={150} digits={1} value={b.wheelDiameterMm} onCommit={(v) => v && onChange({ ...b, wheelDiameterMm: v, wheelId: undefined })} /><span>mm</span></div>
                 </div>
                 <div className="field">
                   <label htmlFor="trk">{t("robot.axleTrack")}</label>
-                  <div className="unit-input"><input id="trk" className="input num" type="number" min={64} max={320} step={0.5} value={b.axleTrackMm} onChange={(e) => { const v = Number(e.target.value); if (v >= 40 && v <= 350) onChange({ ...b, axleTrackMm: v }); }} /><span>mm</span></div>
+                  <div className="unit-input"><NumInput id="trk" className="input num" min={40} max={350} digits={1} value={b.axleTrackMm} onCommit={(v) => v && onChange({ ...b, axleTrackMm: v })} /><span>mm</span></div>
                 </div>
                 <div className="field">
                   <label htmlFor="cx">{t("builder.casterPos")}</label>
-                  <div className="unit-input"><input id="cx" className="input num" type="number" min={-220} max={240} step={4} value={b.casterX} onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v !== 0) onChange({ ...b, casterX: clamp(v, -220, 240) }); }} /><span>mm</span></div>
+                  <div className="unit-input"><NumInput id="cx" className="input num" min={-220} max={240} digits={0} value={b.casterX} onCommit={(v) => v !== undefined && v !== 0 && onChange({ ...b, casterX: v })} /><span>mm</span></div>
                 </div>
               </div>
               <p className="hint" style={{ margin: 0 }}>{t("builder.wheelHint")}</p>
@@ -380,7 +393,7 @@ export default function RobotBuilder({ value: b, onChange }: Props) {
           <div className="field" style={{ marginBottom: 12 }}>
             <label htmlFor="mm2" className="row" style={{ gap: 6 }}><Scale size={14} /> {t("builder.measured")}</label>
             <div className="unit-input">
-              <input id="mm2" className="input num" type="number" min={0} max={4000} placeholder={String(stats.computedMassG)} value={b.measuredMassG ?? ""} onChange={(e) => { const v = Number(e.target.value); onChange({ ...b, measuredMassG: e.target.value === "" || !(v > 0) ? undefined : v }); }} />
+              <NumInput id="mm2" className="input num" min={1} max={4000} digits={0} allowEmpty placeholder={String(stats.computedMassG)} value={b.measuredMassG} onCommit={(v) => onChange({ ...b, measuredMassG: v })} />
               <span>g</span>
             </div>
             <span className="hint">{t("builder.measuredHint")}</span>

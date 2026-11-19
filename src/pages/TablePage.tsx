@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { useApp } from "../state/app";
 import { useT, DictKey } from "../i18n";
-import { DRAW_COLORS, PROGRAM_COLORS, newProgram, uid } from "../state/workspace";
+import { DRAW_COLORS, PROGRAM_COLORS, canAddProgram, newProgram, uid } from "../state/workspace";
 import { MISSIONS, TABLE_H, TABLE_W } from "../field/bioglow";
 import { routeToCode } from "../field/route";
 import FieldView, { FieldHandle, RunView } from "../components/field/FieldView";
@@ -208,7 +208,9 @@ export default function TablePage() {
     }
   };
 
+  const canAdd = ws ? canAddProgram(ws) : false;
   const addProgram = () => {
+    if (!canAdd) return;
     const p = newProgram(programs.length, t("table.program", { n: programs.length + 1 }));
     update((w) => ({ ...w, programs: [...w.programs, p] }));
     setActiveId(p.id);
@@ -281,13 +283,14 @@ export default function TablePage() {
         )}
         <div className="row" style={{ gap: 6, flexWrap: "wrap", flex: 1 }} role="group" aria-label={t("code.programs")}>
           {programs.map((p, i) => (
-            <button key={p.id} className="prog-chip" aria-pressed={p.id === active?.id} onClick={() => setActiveId(p.id)} title={p.name}>
+            <button key={p.id} className="prog-chip" aria-pressed={p.id === active?.id} onClick={() => setActiveId(p.id)} title={`prg ${i + 1} · ${p.name}`}>
               <span className="dot" style={{ background: p.color, opacity: p.visible ? 1 : 0.35 }} />
+              <span className="num tiny muted">{i + 1}</span>
               <span style={{ maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name || `P${i + 1}`}</span>
               {runs[p.id] && <span className="tiny muted num">{fmtTime(runs[p.id].endTime)}</span>}
             </button>
           ))}
-          <button className="btn ghost sm" onClick={addProgram} aria-label={t("table.addProgram")} title={t("table.addProgram")}>
+          <button className="btn ghost sm" onClick={addProgram} disabled={!canAdd} aria-label={t("table.addProgram")} title={canAdd ? t("table.addProgram") : t("table.maxPrograms", { n: 9 })}>
             <Plus size={16} />
           </button>
         </div>
