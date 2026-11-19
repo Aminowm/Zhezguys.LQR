@@ -24,7 +24,8 @@ const r2 = (x: number) => Math.round(x * 100) / 100;
 export function modelConstants(p: RobotProfile): ModelConstants {
   const d = derive(p);
   return {
-    WHEEL_D: r2(p.wheelDiameterMm),
+    // average rolling diameter of the two tyres (the right one is wheelMismatchPct smaller)
+    WHEEL_D: r2(p.wheelDiameterMm * (1 - (p.wheelMismatchPct ?? 0) / 200)),
     AXLE: r2(p.axleTrackMm),
     YAW_A: r2(d.yawA),
     YAW_B: r2(d.yawB),
@@ -46,6 +47,8 @@ export function lqrGains(a: number, b: number, eMax: number, rateMax: number, uM
 }
 
 export interface LqrSettings {
+  TURN_SPEED: number;
+  TURN_ACC: number;
   TURN_E_MAX: number;
   TURN_RATE_MAX: number;
   TURN_TOL: number;
@@ -56,6 +59,8 @@ export interface LqrSettings {
   HOLD_RATE_MAX: number;
 }
 export const LQR_DEFAULT: LqrSettings = {
+  TURN_SPEED: 0.55,
+  TURN_ACC: 0.35,
   TURN_E_MAX: 6,
   TURN_RATE_MAX: 300,
   TURN_TOL: 0.2,
@@ -221,9 +226,23 @@ export function simLqrTurn(profile: RobotProfile, target: number, ulim = 100, L:
   const h = new Hub(profile, seed);
   const m = h.m;
   const t0 = h.sim.now();
-  const [k1, k2] = lqrGains(m.YAW_A, m.YAW_B, L.TURN_E_MAX, L.TURN_RATE_MAX, ulim);
-  const ki = 2 * k1;
+  const b = m.YAW_B;
   const u0 = m.U_TURN0;
+  const [k1, k2] = lqrGains(m.YAW_A, b, L.TURN_E_MAX, L.TURN_RATE_MAX, ulim);
+  const ki = 2 * k1;
+  const h0 = h.heading();
+  const s = target >= h0 ? 1 : -1;
+  const D = Math.abs(target - h0);
+  let top = L.TURN_SPEED * ((-b * ulim) / m.YAW_A);
+  const acc = L.TURN_ACC * b * ulim;
+  let tAcc = top / acc;
+  let dAcc = 0.5 * acc * tAcc * tAcc;
+  if (2 * dAcc > D) {
+    tAcc = Math.sqrt(D / acc);
+    top = acc * tAcc;
+    dAcc = D / 2;
+  }
+  const tEnd = 2 * tAcc + (top > 0 ? (D - 2 * dAcc) / top : 0);
   let integ = 0;
   let settled = 0;
   const sw = h.stopwatch();
@@ -233,19 +252,33 @@ export function simLqrTurn(profile: RobotProfile, target: number, ulim = 100, L:
     const now = sw();
     const dt = (now - last) / 1000;
     last = now;
-    const e = target - h.heading();
+    const t = now / 1000;
+    let p: number, wRef: number, aRef: number;
+    if (t < tAcc) [p, wRef, aRef] = [0.5 * acc * t * t, acc * t, acc];
+    else if (t < tEnd - tAcc) [p, wRef, aRef] = [dAcc + top * (t - tAcc), top, 0];
+    else if (t < tEnd) {
+      const td = tEnd - t;
+      [p, wRef, aRef] = [D - 0.5 * acc * td * td, acc * td, -acc];
+    } else [p, wRef, aRef] = [D, 0, 0];
+    const e = h0 + s * p - h.heading();
     const w = h.rate();
-    integ = Math.abs(e) < 2 ? clamp(integ + e * dt, -2, 2) : 0;
-    let u = k1 * e - k2 * w + ki * integ + (u0 * e) / (Math.abs(e) + 0.3);
+    let u: number;
+    if (t < tEnd) {
+      const uff = (aRef - m.YAW_A * wRef) / b + (wRef > 0 ? u0 : 0);
+      u = s * uff + k1 * e + k2 * (s * wRef - w);
+    } else {
+      integ = Math.abs(e) < 2 ? clamp(integ + e * dt, -2, 2) : 0;
+      u = k1 * e - k2 * w + ki * integ + (u0 * e) / (Math.abs(e) + 0.3);
+      if (Math.abs(e) <= L.TURN_TOL && Math.abs(w) < 4) {
+        settled += dt * 1000;
+        u = 0;
+        if (settled >= L.TURN_SETTLE) {
+          timedOut = false;
+          break;
+        }
+      } else settled = 0;
+    }
     u = clamp(u, -ulim, ulim);
-    if (Math.abs(e) <= L.TURN_TOL && Math.abs(w) < 4) {
-      settled += dt * 1000;
-      u = 0;
-      if (settled >= L.TURN_SETTLE) {
-        timedOut = false;
-        break;
-      }
-    } else settled = 0;
     h.dc("B", u);
     h.dc("F", -u);
     h.wait(5);

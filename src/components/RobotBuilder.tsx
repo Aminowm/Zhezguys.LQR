@@ -2,7 +2,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { RotateCw, Copy, Trash2, AlertTriangle, Scale, Move, Box, LayoutGrid, ArrowUp, ArrowDown, Loader2, Boxes, SlidersHorizontal } from "lucide-react";
-import { useT, DictKey } from "../i18n";
+import { useLang, useT, DictKey } from "../i18n";
 import { useApp } from "../state/app";
 import {
   buildStats, fixedParts, massOfPart, newPart, Part, PartKind, PART_SPECS, RobotBuild, TEMPLATES, wheelWidth, partId, partZ,
@@ -10,6 +10,7 @@ import {
 import { CATALOG_BY_ID } from "../robot/catalog";
 import CatalogPanel, { useItemName } from "./builder/CatalogPanel";
 import NumInput from "./ui/NumInput";
+import { LEGO_COLORS, partColor } from "../robot/colors";
 
 const Robot3D = lazy(() => import("./builder/Robot3D"));
 
@@ -199,6 +200,7 @@ interface Props {
 export default function RobotBuilder({ value: b, onChange }: Props) {
   const t = useT();
   const name = useItemName();
+  const lang = useLang((x) => x.lang);
   const theme = useApp((s) => s.theme);
   const dark = theme === "dark" || (theme === "system" && typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches);
   const [view, setView] = useState<"3d" | "top">("3d");
@@ -338,6 +340,27 @@ export default function RobotBuilder({ value: b, onChange }: Props) {
                   </>
                 )}
               </div>
+              {(["beam", "brick", "openFrame", "attachment", "frame"] as PartKind[]).includes(selected.kind) && (
+                <div className="swatches" role="radiogroup" aria-label={t("builder.color")}>
+                  <span className="label">{t("builder.color")}</span>
+                  {LEGO_COLORS.map((c) => {
+                    const on = partColor(selected).toLowerCase() === c.hex.toLowerCase();
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={on}
+                        title={lang === "en" ? c.en : c.ru}
+                        aria-label={lang === "en" ? c.en : c.ru}
+                        className="swatch"
+                        style={{ background: c.hex }}
+                        onClick={() => setPart(selected.id, { color: c.hex })}
+                      />
+                    );
+                  })}
+                </div>
+              )}
               {selected.kind === "frame" && <p className="hint" style={{ margin: "6px 0 0" }}>{t("builder.frameHint")}</p>}
             </motion.div>
           )}

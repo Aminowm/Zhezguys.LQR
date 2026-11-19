@@ -13,8 +13,10 @@ describe("controllers on the default robot", () => {
     const pid = e((a, s) => simPidTurn(DEFAULT_PROFILE, a, 100, undefined, s));
     const gyro = e((a, s) => simGyroTurn(DEFAULT_PROFILE, a, 100, undefined, s));
     console.log("turn |err|", { lqr, pid, gyro });
-    expect(lqr).toBeLessThan(pid);
-    expect(lqr).toBeLessThan(gyro);
+    expect(lqr).toBeLessThan(pid / 3);
+    expect(lqr).toBeLessThan(gyro / 3);
+    // follows a plan, so no overshoot
+    for (const a of angles) expect(simLqrTurn(DEFAULT_PROFILE, a).overshoot).toBeLessThan(0.5);
   });
   it("LQR drives straighter than PID and the gyro DriveBase", () => {
     const d = [600, 1200];
@@ -25,6 +27,13 @@ describe("controllers on the default robot", () => {
     console.log("straight |lateral|", { lqr, pid, gyro });
     expect(lqr).toBeLessThan(pid);
     expect(lqr).toBeLessThan(gyro);
+    const dist = (f: (mm: number, s: number) => { distErr: number }) => mean(d.map((mm, i) => Math.abs(f(mm, 31 + i).distErr)));
+    const dl = dist((mm, s) => simLqrStraight(DEFAULT_PROFILE, mm, undefined, undefined, s));
+    const dp = dist((mm, s) => simPidStraight(DEFAULT_PROFILE, mm, undefined, undefined, s));
+    const dg = dist((mm, s) => simGyroStraight(DEFAULT_PROFILE, mm, undefined, s));
+    console.log("straight |distance|", { dl, dp, dg });
+    expect(dl).toBeLessThan(dg);
+    expect(dl).toBeLessThan(dp);
   });
 });
 

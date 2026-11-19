@@ -36,7 +36,7 @@ tool_right = Motor(Port.E)
 CONTROLLER = "LQR"
 
 # Robot model — the site rewrites the lines marked "site" from your 3D robot
-WHEEL_D = 88  # mm, site
+WHEEL_D = 87.74  # mm, site: average of both tyres
 AXLE = 112  # mm, site
 YAW_A = -5.83  # 1/s, site
 YAW_B = 50.2  # deg/s2 per %, site
@@ -168,6 +168,8 @@ def move_mm(dist, power=60):
 # robot's weight, size and motors. *_E_MAX / *_RATE_MAX = the error you accept
 # (Bryson's rule): smaller = stiffer.
 
+TURN_SPEED = 0.55  # turn plan: share of the top turning speed...
+TURN_ACC = 0.35  # ...and of the strongest turning acceleration
 TURN_E_MAX = 6.0  # deg
 TURN_RATE_MAX = 300.0  # deg/s
 TURN_TOL = 0.2  # deg: finished when closer than this...
@@ -190,11 +192,24 @@ def lqr_gains(a, b, e_max, rate_max, u_max):
 
 
 def lqr_turn(target, ulim=100, pivot=None, timeout=4000):
-    # turn until hub.imu.heading() == target; pivot="left"/"right" = on one wheel
+    # follows a smooth heading plan to target, then holds it there
+    # pivot="left"/"right" = turn on one wheel
     b = YAW_B / 2 if pivot else YAW_B
+    u0 = U_TURN0 * (1.6 if pivot else 1.0)  # this robot's static friction
     k1, k2 = lqr_gains(YAW_A, b, TURN_E_MAX, TURN_RATE_MAX, ulim)
     ki = 2.0 * k1  # integral removes the last tenths of a degree
-    u0 = U_TURN0 * (1.6 if pivot else 1.0)  # this robot's static friction
+    h0 = hub.imu.heading()
+    s = 1 if target >= h0 else -1
+    D = abs(target - h0)
+    top = TURN_SPEED * (-b * ulim / YAW_A)  # deg/s
+    acc = TURN_ACC * b * ulim  # deg/s2
+    t_acc = top / acc
+    d_acc = 0.5 * acc * t_acc * t_acc
+    if 2 * d_acc > D:
+        t_acc = sqrt(D / acc)
+        top = acc * t_acc
+        d_acc = D / 2
+    t_end = 2 * t_acc + ((D - 2 * d_acc) / top if top > 0 else 0)
     if pivot == "left":
         left.hold()
     elif pivot == "right":
@@ -207,18 +222,33 @@ def lqr_turn(target, ulim=100, pivot=None, timeout=4000):
         now = sw.time()
         dt = (now - last) / 1000
         last = now
-        e = target - hub.imu.heading()
-        w = heading_rate()
-        integ = clamp(integ + e * dt, -2, 2) if abs(e) < 2 else 0.0
-        u = k1 * e - k2 * w + ki * integ + u0 * e / (abs(e) + 0.3)
-        u = clamp(u, -ulim, ulim)
-        if abs(e) <= TURN_TOL and abs(w) < 4:
-            settled += dt * 1000
-            u = 0
-            if settled >= TURN_SETTLE:
-                break
+        t = now / 1000
+        if t < t_acc:
+            p, w_ref, a_ref = 0.5 * acc * t * t, acc * t, acc
+        elif t < t_end - t_acc:
+            p, w_ref, a_ref = d_acc + top * (t - t_acc), top, 0
+        elif t < t_end:
+            td = t_end - t
+            p, w_ref, a_ref = D - 0.5 * acc * td * td, acc * td, -acc
         else:
-            settled = 0
+            p, w_ref, a_ref = D, 0, 0
+        e = h0 + s * p - hub.imu.heading()
+        w = heading_rate()
+        if t < t_end:
+            # plan + model feed-forward + LQR on [heading error, rate error]
+            u_ff = (a_ref - YAW_A * w_ref) / b + (u0 if w_ref > 0 else 0)
+            u = s * u_ff + k1 * e + k2 * (s * w_ref - w)
+        else:
+            integ = clamp(integ + e * dt, -2, 2) if abs(e) < 2 else 0.0
+            u = k1 * e - k2 * w + ki * integ + u0 * e / (abs(e) + 0.3)
+            if abs(e) <= TURN_TOL and abs(w) < 4:
+                settled += dt * 1000
+                u = 0
+                if settled >= TURN_SETTLE:
+                    break
+            else:
+                settled = 0
+        u = clamp(u, -ulim, ulim)
         if pivot == "left":
             right.dc(-u)
         elif pivot == "right":
