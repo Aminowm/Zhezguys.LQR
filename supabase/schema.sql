@@ -118,3 +118,10 @@ grant execute on function public.create_team(text, text, text) to authenticated;
 grant execute on function public.join_team(text, text, text) to authenticated;
 grant execute on function public.lookup_team(text) to anon, authenticated;
 grant execute on function public.my_team_id() to authenticated;
+
+-- Table access for signed-in users (Row Level Security above still limits every row
+-- to the user's own team). Newer Supabase projects no longer grant this automatically.
+grant usage on schema public to anon, authenticated;
+grant select on public.teams to authenticated;
+grant select on public.members to authenticated;
+grant select, insert, update on public.workspaces to authenticated;

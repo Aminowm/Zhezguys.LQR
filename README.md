@@ -33,9 +33,10 @@ To give every team real cloud accounts with server-side protection, use Supabase
 
 1. Create a project at supabase.com.
 2. In **SQL Editor**, run [`supabase/schema.sql`](supabase/schema.sql). It creates the tables, Row Level Security rules (a team can only read and write its own workspace) and the `create_team` / `join_team` functions.
-3. Copy `.env.example` to `.env.local` and fill in `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (Project Settings → API).
-   For GitHub Pages, add the same two names as **repository secrets**.
-4. Rebuild. The site switches to cloud mode automatically.
+3. Put the **Project URL** and the **publishable key** (`sb_publishable_…`, Project Settings → API Keys) into `SUPABASE` in [`src/config.ts`](src/config.ts). Both are public by design. Never use the secret key (`sb_secret_…`) in the site.
+   Optional: `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` (in `.env.local` or as GitHub repository secrets) override those values at build time.
+4. In **Authentication → URL Configuration**, set the Site URL and a Redirect URL to the site's address (for example `https://aminowm.github.io/Zhezguys.LQR/`), so e-mail confirmation links come back to the site.
+5. Rebuild. The site switches to cloud mode automatically.
 
 ## Deploy (GitHub Pages)
 
