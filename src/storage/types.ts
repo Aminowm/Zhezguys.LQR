@@ -65,10 +65,8 @@ export interface Plan {
 export interface TuneSummary {
   at: string;
   robotKey: string;
-  lqr: { Q: number; R: number; b: number; kd: number; Minpower: number };
-  pid: { Kp: number; Ki: number; Kd: number; Minpower: number };
-  db: { turn_rate: number; turn_acceleration: number };
-  straight: { Q: number; R: number; b: number; kd: number };
+  pid: { PID_KP: number; PID_KI: number; PID_KD: number; PID_MINPOWER: number };
+  gyro: { GYRO_TURN_RATE: number; GYRO_TURN_ACC: number };
 }
 
 export interface Workspace {

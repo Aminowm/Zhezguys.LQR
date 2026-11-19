@@ -1,6 +1,7 @@
-// Starter code every new team gets. It is Zhezguys' own SPIKE Prime code,
-// split into files. When a program runs (or is exported for the hub) the
-// files are joined in this order: config → helpers → lqr → pid → program.
+// Starter code every new team gets (Zhezguys style). When a program runs on
+// the table — or is exported for the hub — the files are joined in this order:
+// config → helpers → lqr → pid → program. Export also adds the hub menu
+// (prg 0 = battery, prg 1–9 = your programs, LEFT/RIGHT choose, CENTER runs).
 
 export type CodeFileId = "config" | "helpers" | "lqr" | "pid";
 
@@ -13,317 +14,404 @@ export const FILE_NAMES: Record<CodeFileId, string> = {
   pid: "pid.py",
 };
 
+export const MAX_PROGRAMS = 9;
+
 export const DEFAULT_FILES: Record<CodeFileId, string> = {
   config: `from pybricks.hubs import PrimeHub
-from pybricks.parameters import Button, Port, Side, Stop, Direction
-from pybricks.tools import wait, run_task, StopWatch
+from pybricks.parameters import Axis, Button, Color, Direction, Port, Stop
 from pybricks.pupdevices import Motor
 from pybricks.robotics import DriveBase
-from math import sqrt
+from pybricks.tools import StopWatch, wait
+from umath import sqrt
 
 hub = PrimeHub()
-hub.system.set_stop_button(Button.CENTER)
-motor_B = Motor(Port.B, Direction.COUNTERCLOCKWISE)
-motor_F = Motor(Port.F)
-motor_E = Motor(Port.E)
-motor_A = Motor(Port.A)
+hub.system.set_stop_button(Button.BLUETOOTH)  # CENTER is used by the program menu
 
-Drive_base = DriveBase(motor_B, motor_F, wheel_diameter=88, axle_track=112)
-Drive_base.use_gyro(True)
-Drive_base.settings(turn_rate=60 * 3.6)
-timer_move = StopWatch()
+left = Motor(Port.B, Direction.COUNTERCLOCKWISE)
+right = Motor(Port.F)
+tool_left = Motor(Port.A)
+tool_right = Motor(Port.E)
+
+# What drives straight(), turn() and turn_one(): "LQR", "PID" or "GYRO"
+CONTROLLER = "LQR"
+
+# Robot model — the site rewrites the lines marked "site" from your 3D robot
+WHEEL_D = 87.74  # mm, site: average of both tyres
+AXLE = 112  # mm, site
+YAW_A = -5.83  # 1/s, site
+YAW_B = 50.2  # deg/s2 per %, site
+LIN_A = -8.72  # 1/s, site
+LIN_B = 73.3  # mm/s2 per %, site
+U_TURN0 = 10.3  # % to start turning, site
+U_DRIVE0 = 6.7  # % to start rolling, site
+
+GYRO_TIMEOUT_MS = 2000  # menu: wait until the robot stands still
+GYRO_WAIT_MS = 200
+
+# Speed presets: straight(500, **NORMAL)
+FAST = dict(vmax=85, acc=500, kd=1.0)
+NORMAL = dict(vmax=65, acc=400, kd=0.8)
+SLOW = dict(vmax=45, acc=300, kd=0.7)
+CRAWL = dict(vmax=30, acc=250, kd=0.6)
+
+drive = DriveBase(left, right, wheel_diameter=WHEEL_D, axle_track=AXLE)
+drive.use_gyro(True)
+GYRO_TURN_RATE = 180  # deg/s at ulim=100 (CONTROLLER = "GYRO")
+GYRO_TURN_ACC = 720  # deg/s2
 `,
-  helpers: `SIGN = 1  # 1 or -1: flips the direction of the one-wheel turn
+  helpers: `TARGET = 0.0  # heading to hold (deg); turn() adds to it
 
 
-def Gyro():
-    return hub.imu.heading()
+def clamp(x, lo, hi):
+    return lo if x < lo else hi if x > hi else x
 
 
-def Gyro_reset(angle=0):
-    hub.imu.reset_heading(angle)
+def heading_rate():
+    # clockwise turn rate in deg/s (same sign as hub.imu.heading())
+    return -hub.imu.angular_velocity(Axis.Z)
 
 
-def angle_error(target, current):
-    # shortest way from current to target, between -180 and 180
-    return (target - current + 180) % 360 - 180
+def mm_per_deg():
+    return 3.14159265 * WHEEL_D / 360
 
 
-def map_value(x, in_min, in_max, out_min, out_max):
-    if in_max == in_min:
-        return out_max
-    x = max(min(x, max(in_min, in_max)), min(in_min, in_max))
-    return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
+def top_speed():
+    # mm/s at 100 % power, from the robot model
+    return -LIN_B * 100 / LIN_A
 
 
-def move_deg(Power_B, Power_F, Deg, Brake=True):
-    motor_B.reset_angle(0)
-    motor_F.reset_angle(0)
-    while (abs(motor_B.angle()) + abs(motor_F.angle())) / 2 < Deg:
-        motor_B.dc(Power_B)
-        motor_F.dc(Power_F)
+def battery_percent():
+    return int(clamp((hub.battery.voltage() - 7000) / 14, 0, 100))
+
+
+# ───── write every program with these three ─────
+
+def straight(dist, vmax=65, acc=400, kd=0.8):
+    # dist in mm (negative = backwards), vmax in % of top speed,
+    # acc in mm/s2, kd = how hard the heading is damped (1.0 = full)
+    if CONTROLLER == "LQR":
+        lqr_straight(dist, vmax, acc, kd)
+    elif CONTROLLER == "PID":
+        pid_straight(dist, vmax, acc, kd)
+    else:
+        gyro_straight(dist, vmax, acc)
+
+
+def turn(angle, ulim=100):
+    # turn by angle degrees (+ = right), counted from the last target
+    global TARGET
+    TARGET += angle
+    if CONTROLLER == "LQR":
+        lqr_turn(TARGET, ulim)
+    elif CONTROLLER == "PID":
+        pid_turn(TARGET, ulim)
+    else:
+        gyro_turn(TARGET, ulim)
+
+
+def turn_one(angle, pivot="left", ulim=90):
+    # turn on one wheel; pivot="left" keeps the left wheel still
+    global TARGET
+    TARGET += angle
+    if CONTROLLER == "LQR":
+        lqr_turn(TARGET, ulim, pivot)
+    elif CONTROLLER == "PID":
+        pid_turn(TARGET, ulim, pivot)
+    else:
+        gyro_turn_one(TARGET, pivot, ulim)
+
+
+# ───── Pybricks DriveBase with the gyro (CONTROLLER = "GYRO") ─────
+
+def gyro_straight(dist, vmax=65, acc=400):
+    drive.settings(straight_speed=vmax / 100 * top_speed(), straight_acceleration=acc)
+    drive.straight(dist)
+    drive.stop()
+
+
+def gyro_turn(target, ulim=100):
+    drive.settings(turn_rate=GYRO_TURN_RATE * ulim / 100, turn_acceleration=GYRO_TURN_ACC)
+    drive.turn(target - hub.imu.heading())
+    drive.stop()
+
+
+def gyro_turn_one(target, pivot="left", ulim=90):
+    # one wheel drives until the gyro reaches the target
+    wheel = right if pivot == "left" else left
+    (left if pivot == "left" else right).hold()
+    sign = 1 if target > hub.imu.heading() else -1
+    power = ulim * 0.5 * sign * (-1 if pivot == "left" else 1)
+    sw = StopWatch()
+    while (target - hub.imu.heading()) * sign > 0 and sw.time() < 4000:
+        wheel.dc(power)
+        wait(5)
+    wheel.brake()
+
+
+def move_mm(dist, power=60):
+    # no gyro at all: the same power on both wheels
+    deg = abs(dist) / mm_per_deg()
+    s = 1 if dist >= 0 else -1
+    left.reset_angle(0)
+    right.reset_angle(0)
+    while (abs(left.angle()) + abs(right.angle())) / 2 < deg:
+        left.dc(power * s)
+        right.dc(power * s)
         wait(10)
-    motor_B.dc(0)
-    motor_F.dc(0)
-    if Brake:
-        motor_B.brake()
-        motor_F.brake()
-
-
-def move_time(Power_B, Power_F, ms, Brake=True):
-    timer_move.reset()
-    while timer_move.time() < ms:
-        motor_B.dc(Power_B)
-        motor_F.dc(Power_F)
-    if Brake:
-        Drive_base.stop()
-
-
-def a_motor(Power, Deg, is_wait=True):
-    motor_A.run_angle(Power * 11, Deg, wait=is_wait)
-
-
-def turn_gyro(hdg, Brake=True):
-    # Pybricks built-in DriveBase turn with the hub gyro (relative angle)
-    Drive_base.settings(turn_rate=50 * 3.6)
-    Drive_base.turn(hdg)
-    if Brake:
-        Drive_base.stop()
-
-
-def straight_gyro(mm, Brake=True):
-    # Pybricks built-in DriveBase straight with the hub gyro
-    Drive_base.straight(mm)
-    if Brake:
-        Drive_base.stop()
+    left.brake()
+    right.brake()
 `,
-  lqr: `def lqr_gains(Q, R, b, kd=0.08):
-    K1 = sqrt(Q / R) / b
-    K2 = kd
-    return K1, K2
+  lqr: `# ───── LQR ─────
+# The robot is a model:   turning  dw/dt = YAW_A*w + YAW_B*u
+#                         driving  dv/dt = LIN_A*v + LIN_B*u
+# lqr_gains() solves the Riccati equation of that model, so the gains fit YOUR
+# robot's weight, size and motors. *_E_MAX / *_RATE_MAX = the error you accept
+# (Bryson's rule): smaller = stiffer.
+
+TURN_SPEED = 0.55  # turn plan: share of the top turning speed...
+TURN_ACC = 0.35  # ...and of the strongest turning acceleration
+TURN_E_MAX = 6.0  # deg
+TURN_RATE_MAX = 300.0  # deg/s
+TURN_TOL = 0.2  # deg: finished when closer than this...
+TURN_SETTLE = 100  # ms ...for this long
+DRIVE_E_MAX = 8.0  # mm behind / ahead of the plan
+DRIVE_V_MAX = 200.0  # mm/s
+HOLD_E_MAX = 2.0  # deg heading error while driving
+HOLD_RATE_MAX = 120.0  # deg/s
 
 
-def turn_lqr(GyroDeg, Q=1, R=0.01, b=2, kd=0.08,
-             Maxpower=80, Minpower=12,
-             Tolerance=1.0, Settle=150, Timeout=3000, Brake=True):
-    K1 = sqrt(Q / R) / b
-    K2 = kd
-    timer = StopWatch()
-    total = StopWatch()
-    last_time = timer.time()
-    last_error = GyroDeg - Gyro()
-    error_rate = 0
+def lqr_gains(a, b, e_max, rate_max, u_max):
+    # x = [error, error rate], u = K1*error + K2*rate  (closed-form Riccati)
+    q1 = 1 / (e_max * e_max)
+    q2 = 1 / (rate_max * rate_max)
+    r = 1 / (u_max * u_max)
+    k1 = sqrt(q1 / r)
+    p2 = sqrt(q1 * r) / b
+    k2 = (a + sqrt(a * a + (b * b / r) * (2 * p2 + q2))) / b
+    return k1, k2
+
+
+def lqr_turn(target, ulim=100, pivot=None, timeout=4000):
+    # follows a smooth heading plan to target, then holds it there
+    # pivot="left"/"right" = turn on one wheel
+    b = YAW_B / 2 if pivot else YAW_B
+    u0 = U_TURN0 * (1.6 if pivot else 1.0)  # this robot's static friction
+    k1, k2 = lqr_gains(YAW_A, b, TURN_E_MAX, TURN_RATE_MAX, ulim)
+    ki = 2.0 * k1  # integral removes the last tenths of a degree
+    h0 = hub.imu.heading()
+    s = 1 if target >= h0 else -1
+    D = abs(target - h0)
+    top = TURN_SPEED * (-b * ulim / YAW_A)  # deg/s
+    acc = TURN_ACC * b * ulim  # deg/s2
+    t_acc = top / acc
+    d_acc = 0.5 * acc * t_acc * t_acc
+    if 2 * d_acc > D:
+        t_acc = sqrt(D / acc)
+        top = acc * t_acc
+        d_acc = D / 2
+    t_end = 2 * t_acc + ((D - 2 * d_acc) / top if top > 0 else 0)
+    if pivot == "left":
+        left.hold()
+    elif pivot == "right":
+        right.hold()
+    integ = 0.0
     settled = 0
-    while total.time() < Timeout:
-        now = timer.time()
-        dt = (now - last_time) / 1000
-        error = GyroDeg - Gyro()
-        if dt > 0:
-            raw_rate = (error - last_error) / dt
-            error_rate = 0.7 * error_rate + 0.3 * raw_rate
-        u = K1 * error + K2 * error_rate
-        u = max(-Maxpower, min(Maxpower, u))
-        if abs(error) > Tolerance and abs(u) < Minpower:
-            u = Minpower if u >= 0 else -Minpower
-        if abs(error) <= Tolerance and abs(error_rate) < 15:
-            settled += now - last_time
-            u = 0
-            if settled >= Settle:
-                break
+    sw = StopWatch()
+    last = sw.time()
+    while sw.time() < timeout:
+        now = sw.time()
+        dt = (now - last) / 1000
+        last = now
+        t = now / 1000
+        if t < t_acc:
+            p, w_ref, a_ref = 0.5 * acc * t * t, acc * t, acc
+        elif t < t_end - t_acc:
+            p, w_ref, a_ref = d_acc + top * (t - t_acc), top, 0
+        elif t < t_end:
+            td = t_end - t
+            p, w_ref, a_ref = D - 0.5 * acc * td * td, acc * td, -acc
         else:
-            settled = 0
-        motor_B.dc(u)
-        motor_F.dc(-u)
-        last_error = error
-        last_time = now
-        wait(10)
-    if Brake:
-        Drive_base.stop()
-    else:
-        motor_B.dc(0)
-        motor_F.dc(0)
-
-
-def turnl_lqr(GyroDeg, Q=1.5, R=0.01, b=2, kd=0.11,
-              Maxpower=75, Minpower=15,
-              Tolerance=1.5, Settle=150, Timeout=3000, Brake=True):
-    # turn with one wheel (the right wheel, motor F)
-    K1 = sqrt(Q / R) / b
-    K2 = kd
-    timer = StopWatch()
-    total = StopWatch()
-    last_time = timer.time()
-    last_error = angle_error(GyroDeg, Gyro())
-    error_rate = 0
-    settled = 0
-    while total.time() < Timeout:
-        now = timer.time()
-        dt = (now - last_time) / 1000
-        error = angle_error(GyroDeg, Gyro())
-        if dt > 0:
-            raw_rate = (error - last_error) / dt
-            error_rate = 0.7 * error_rate + 0.3 * raw_rate
-        u = K1 * error + K2 * error_rate
-        u = max(-Maxpower, min(Maxpower, u))
-        if abs(error) > Tolerance and abs(u) < Minpower:
-            u = Minpower if u >= 0 else -Minpower
-        if abs(error) <= Tolerance and abs(error_rate) < 15:
-            settled += now - last_time
-            u = 0
-            if settled >= Settle:
-                break
+            p, w_ref, a_ref = D, 0, 0
+        e = h0 + s * p - hub.imu.heading()
+        w = heading_rate()
+        if t < t_end:
+            # plan + model feed-forward + LQR on [heading error, rate error]
+            u_ff = (a_ref - YAW_A * w_ref) / b + (u0 if w_ref > 0 else 0)
+            u = s * u_ff + k1 * e + k2 * (s * w_ref - w)
         else:
-            settled = 0
-        motor_F.dc(SIGN * (-u))
-        last_error = error
-        last_time = now
-        wait(10)
-    if Brake:
-        motor_F.brake()
-        Drive_base.stop()
-    else:
-        motor_F.dc(0)
+            integ = clamp(integ + e * dt, -2, 2) if abs(e) < 2 else 0.0
+            u = k1 * e - k2 * w + ki * integ + u0 * e / (abs(e) + 0.3)
+            if abs(e) <= TURN_TOL and abs(w) < 4:
+                settled += dt * 1000
+                u = 0
+                if settled >= TURN_SETTLE:
+                    break
+            else:
+                settled = 0
+        u = clamp(u, -ulim, ulim)
+        if pivot == "left":
+            right.dc(-u)
+        elif pivot == "right":
+            left.dc(u)
+        else:
+            left.dc(u)
+            right.dc(-u)
+        wait(5)
+    left.hold()
+    right.hold()
 
 
-def straight_lqr(Deg, Power=60, GyroDeg=None, Q=1, R=0.01, b=4, kd=0.04,
-                 Minpower=20, Accel=150, Decel=250, Timeout=8000, Brake=True):
-    # Drive Deg motor degrees in a straight line; LQR holds the heading GyroDeg.
-    # Negative Power drives backwards.
-    if GyroDeg is None:
-        GyroDeg = Gyro()
-    K1 = sqrt(Q / R) / b
-    K2 = kd
-    direction = 1 if Power >= 0 else -1
-    Power = abs(Power)
-    Deg = abs(Deg)
-    motor_B.reset_angle(0)
-    motor_F.reset_angle(0)
-    timer = StopWatch()
-    last_time = timer.time()
-    last_error = GyroDeg - Gyro()
-    error_rate = 0
-    while timer.time() < Timeout:
-        now = timer.time()
-        dt = (now - last_time) / 1000
-        traveled = (abs(motor_B.angle()) + abs(motor_F.angle())) / 2
-        if traveled >= Deg:
+def lqr_straight(dist, vmax=65, acc=400, kd=0.8, timeout=10000):
+    # follows a smooth speed plan and corrects distance, speed and heading at once
+    s = 1 if dist >= 0 else -1
+    D = abs(dist)
+    top = vmax / 100 * top_speed()
+    ks1, ks2 = lqr_gains(LIN_A, LIN_B, DRIVE_E_MAX, DRIVE_V_MAX, 60)
+    kh1, kh2 = lqr_gains(YAW_A, YAW_B, HOLD_E_MAX, HOLD_RATE_MAX, 40)
+    t_acc = top / acc
+    d_acc = 0.5 * acc * t_acc * t_acc
+    if 2 * d_acc > D:
+        t_acc = sqrt(D / acc)
+        top = acc * t_acc
+        d_acc = D / 2
+    t_end = 2 * t_acc + (D - 2 * d_acc) / top
+    k = mm_per_deg()
+    left.reset_angle(0)
+    right.reset_angle(0)
+    sw = StopWatch()
+    while sw.time() < timeout:
+        t = sw.time() / 1000
+        if t < t_acc:
+            p, v_ref, a_ref = 0.5 * acc * t * t, acc * t, acc
+        elif t < t_end - t_acc:
+            p, v_ref, a_ref = d_acc + top * (t - t_acc), top, 0
+        elif t < t_end:
+            td = t_end - t
+            p, v_ref, a_ref = D - 0.5 * acc * td * td, acc * td, -acc
+        else:
+            p, v_ref, a_ref = D, 0, 0
+        pos = s * (left.angle() + right.angle()) / 2 * k
+        vel = s * (left.speed() + right.speed()) / 2 * k
+        u_ff = (a_ref - LIN_A * v_ref) / LIN_B + (U_DRIVE0 if v_ref > 0 else 0)
+        u = s * clamp(u_ff + ks1 * (p - pos) + ks2 * (v_ref - vel), -100, 100)
+        e = TARGET - hub.imu.heading()
+        uh = clamp(kh1 * e - kd * kh2 * heading_rate(), -40, 40)
+        left.dc(clamp(u + uh, -100, 100))
+        right.dc(clamp(u - uh, -100, 100))
+        if t >= t_end and abs(p - pos) < 1.0 and abs(vel) < 15:
             break
-        up = Minpower + (Power - Minpower) * min(1, traveled / Accel)
-        down = Minpower + (Power - Minpower) * min(1, (Deg - traveled) / Decel)
-        base = min(Power, up, down) * direction
-        error = GyroDeg - Gyro()
-        if dt > 0:
-            raw_rate = (error - last_error) / dt
-            error_rate = 0.7 * error_rate + 0.3 * raw_rate
-        u = K1 * error + K2 * error_rate
-        u = max(-40, min(40, u))
-        motor_B.dc(base + u)
-        motor_F.dc(base - u)
-        last_error = error
-        last_time = now
-        wait(10)
-    motor_B.dc(0)
-    motor_F.dc(0)
-    if Brake:
-        motor_B.brake()
-        motor_F.brake()
+        if t > t_end + 1.5:
+            break
+        wait(5)
+    left.hold()
+    right.hold()
 `,
-  pid: `def turn_pid(GyroDeg, Kp=3.0, Ki=0.0, Kd=0.15,
-             Maxpower=80, Minpower=12,
-             Tolerance=1.0, Settle=150, Timeout=3000, Brake=True):
-    # Classic PID on the gyro heading (no filter on the derivative)
-    timer = StopWatch()
-    last_time = timer.time()
-    last_error = GyroDeg - Gyro()
-    integral = 0
+  pid: `# ───── PID — the classic way most teams write it ─────
+PID_KP = 3.0
+PID_KI = 0.0
+PID_KD = 0.15
+PID_MINPOWER = 12
+PID_TOL = 1.0  # deg
+PID_SETTLE = 150  # ms
+
+HOLD_KP = 2.0  # heading PID while driving straight
+HOLD_KI = 0.0
+HOLD_KD = 0.05
+DRIVE_MINPOWER = 20
+
+
+def pid_turn(target, ulim=100, pivot=None, timeout=3000):
+    sw = StopWatch()
+    last = sw.time()
+    last_e = target - hub.imu.heading()
+    integ = 0
     settled = 0
-    while timer.time() < Timeout:
-        now = timer.time()
-        dt = (now - last_time) / 1000
-        error = GyroDeg - Gyro()
-        derivative = 0
+    if pivot == "left":
+        left.hold()
+    elif pivot == "right":
+        right.hold()
+    while sw.time() < timeout:
+        now = sw.time()
+        dt = (now - last) / 1000
+        e = target - hub.imu.heading()
+        d = 0
         if dt > 0:
-            integral += error * dt
-            integral = max(-30, min(30, integral))
-            derivative = (error - last_error) / dt
-        u = Kp * error + Ki * integral + Kd * derivative
-        u = max(-Maxpower, min(Maxpower, u))
-        if abs(error) > Tolerance and abs(u) < Minpower:
-            u = Minpower if u >= 0 else -Minpower
-        if abs(error) <= Tolerance and abs(derivative) < 15:
-            settled += now - last_time
+            integ = clamp(integ + e * dt, -30, 30)
+            d = (e - last_e) / dt
+        u = clamp(PID_KP * e + PID_KI * integ + PID_KD * d, -ulim, ulim)
+        if abs(e) > PID_TOL and abs(u) < PID_MINPOWER:
+            u = PID_MINPOWER if u >= 0 else -PID_MINPOWER
+        if abs(e) <= PID_TOL and abs(d) < 15:
+            settled += now - last
             u = 0
-            if settled >= Settle:
+            if settled >= PID_SETTLE:
                 break
         else:
             settled = 0
-        motor_B.dc(u)
-        motor_F.dc(-u)
-        last_error = error
-        last_time = now
+        if pivot == "left":
+            right.dc(-u)
+        elif pivot == "right":
+            left.dc(u)
+        else:
+            left.dc(u)
+            right.dc(-u)
+        last_e = e
+        last = now
         wait(10)
-    if Brake:
-        Drive_base.stop()
-    else:
-        motor_B.dc(0)
-        motor_F.dc(0)
+    left.brake()
+    right.brake()
 
 
-def straight_pid(Deg, Power=60, GyroDeg=None, Kp=2.0, Ki=0.0, Kd=0.05,
-                 Minpower=20, Accel=150, Decel=250, Timeout=8000, Brake=True):
-    # Drive straight Deg motor degrees; PID holds the heading
-    if GyroDeg is None:
-        GyroDeg = Gyro()
-    direction = 1 if Power >= 0 else -1
-    Power = abs(Power)
-    Deg = abs(Deg)
-    motor_B.reset_angle(0)
-    motor_F.reset_angle(0)
-    timer = StopWatch()
-    last_time = timer.time()
-    last_error = GyroDeg - Gyro()
-    integral = 0
-    while timer.time() < Timeout:
-        now = timer.time()
-        dt = (now - last_time) / 1000
-        traveled = (abs(motor_B.angle()) + abs(motor_F.angle())) / 2
-        if traveled >= Deg:
+def pid_straight(dist, vmax=65, acc=400, kd=0.8, timeout=10000):
+    # power ramps up and down, PID keeps the heading, brakes at the distance
+    deg = abs(dist) / mm_per_deg()
+    s = 1 if dist >= 0 else -1
+    ramp = max(60, (vmax / 100 * top_speed()) ** 2 / (2 * acc) / mm_per_deg())
+    left.reset_angle(0)
+    right.reset_angle(0)
+    sw = StopWatch()
+    last = sw.time()
+    last_e = TARGET - hub.imu.heading()
+    integ = 0
+    while sw.time() < timeout:
+        now = sw.time()
+        dt = (now - last) / 1000
+        traveled = (abs(left.angle()) + abs(right.angle())) / 2
+        if traveled >= deg:
             break
-        up = Minpower + (Power - Minpower) * min(1, traveled / Accel)
-        down = Minpower + (Power - Minpower) * min(1, (Deg - traveled) / Decel)
-        base = min(Power, up, down) * direction
-        error = GyroDeg - Gyro()
-        derivative = 0
+        up = DRIVE_MINPOWER + (vmax - DRIVE_MINPOWER) * min(1, traveled / ramp)
+        down = DRIVE_MINPOWER + (vmax - DRIVE_MINPOWER) * min(1, (deg - traveled) / ramp)
+        base = min(vmax, up, down) * s
+        e = TARGET - hub.imu.heading()
+        d = 0
         if dt > 0:
-            integral += error * dt
-            integral = max(-20, min(20, integral))
-            derivative = (error - last_error) / dt
-        u = Kp * error + Ki * integral + Kd * derivative
-        u = max(-40, min(40, u))
-        motor_B.dc(base + u)
-        motor_F.dc(base - u)
-        last_error = error
-        last_time = now
+            integ = clamp(integ + e * dt, -20, 20)
+            d = (e - last_e) / dt
+        u = clamp(HOLD_KP * e + HOLD_KI * integ + HOLD_KD * kd * d, -40, 40)
+        left.dc(base + u)
+        right.dc(base - u)
+        last_e = e
+        last = now
         wait(10)
-    motor_B.dc(0)
-    motor_F.dc(0)
-    if Brake:
-        motor_B.brake()
-        motor_F.brake()
+    left.brake()
+    right.brake()
 `,
 };
 
-export const DEFAULT_PROGRAM = `# Program 1 — write your run here.
-# Heading 0 = the direction the robot faces at the start.
-Gyro_reset(0)
-straight_lqr(700, 60, 0)
-turn_lqr(-90)
-straight_lqr(500, 60, -90)
-a_motor(50, 180)
-straight_lqr(500, -60, -90)
-turn_lqr(0)
-straight_lqr(700, -60, 0)
+export const DEFAULT_PROGRAM = `# prg 1 — example run: drive out, turn, use the left tool, come back
+straight(500, **NORMAL)
+turn(-90)
+straight(380, **NORMAL)
+tool_left.run_angle(500, 180)
+straight(-380, **NORMAL)
+turn(90)
+straight(-500, **NORMAL)
 `;
+
+export const emptyProgram = (n: number) => `# prg ${n}\n`;
+
+/** Lines that start every program, on the table and on the hub. */
+const START = `hub.imu.reset_heading(0)\nTARGET = 0.0\n`;
 
 export function buildProgram(files: Record<CodeFileId, string>, program: string) {
   const parts: string[] = [];
@@ -338,6 +426,7 @@ export function buildProgram(files: Record<CodeFileId, string>, program: string)
     line += n + 1;
   };
   for (const id of FILE_ORDER) push(FILE_NAMES[id], files[id] ?? DEFAULT_FILES[id]);
+  push("start", START);
   push("program", program);
   return {
     code: parts.join(""),
@@ -347,4 +436,75 @@ export function buildProgram(files: Record<CodeFileId, string>, program: string)
       return null;
     },
   };
+}
+
+const indent = (src: string, pad: string) => {
+  const lines = src.replace(/\s+$/, "").split("\n");
+  const body = lines.filter((l) => l.trim() && !l.trim().startsWith("#")).length ? lines : [...lines, "pass"];
+  return body.map((l) => (l.trim() ? pad + l : "")).join("\n");
+};
+
+/** One file for the hub: library + menu (prg 0 = battery, prg 1–9 = programs). */
+export function buildHubProgram(files: Record<CodeFileId, string>, programs: { name: string; code: string }[]) {
+  const list = programs.slice(0, MAX_PROGRAMS);
+  const pad = "                ";
+  const branches = list
+    .map((p, i) => `            elif prg == ${i + 1}:  # ${p.name.replace(/\n/g, " ")}\n${indent(p.code, pad)}`)
+    .join("\n\n");
+  const menu = `# ───── menu: LEFT / RIGHT choose, CENTER runs ─────
+prg = 0
+max_prg = ${list.length}
+
+while True:
+    hub.display.char(str(prg))
+    pressed = hub.buttons.pressed()
+
+    if Button.RIGHT in pressed:
+        prg = (prg + 1) % (max_prg + 1)
+        while Button.RIGHT in hub.buttons.pressed():
+            wait(10)
+
+    elif Button.LEFT in pressed:
+        prg = (prg - 1) % (max_prg + 1)
+        while Button.LEFT in hub.buttons.pressed():
+            wait(10)
+
+    elif Button.CENTER in pressed:
+        while Button.CENTER in hub.buttons.pressed():
+            wait(10)
+
+        hub.display.char("-")
+
+        left.stop()
+        right.stop()
+        sw0 = StopWatch()
+        while not hub.imu.stationary() and sw0.time() < GYRO_TIMEOUT_MS:
+            wait(10)
+        wait(GYRO_WAIT_MS)
+        hub.imu.reset_heading(0)
+        TARGET = 0.0
+
+        try:
+            # ---------- 0: BATTERY ----------
+            if prg == 0:
+                mv = hub.battery.voltage()
+                pct = battery_percent()
+                print("Battery: %d mV (%d %%)" % (mv, pct))
+                hub.display.number(pct)
+                wait(3000)
+
+${branches || "            pass"}
+
+            print("Heading error: %.2f deg" % (hub.imu.heading() - TARGET))
+        except SystemExit:
+            print("\\n[!] STOPPED WITH THE BLUETOOTH BUTTON\\n")
+
+        left.hold()
+        right.hold()
+        tool_left.brake()
+        tool_right.brake()
+        wait(500)
+`;
+  const lib = FILE_ORDER.map((id) => `# ───── ${FILE_NAMES[id]} ─────\n${files[id] ?? DEFAULT_FILES[id]}`).join("\n");
+  return lib.replace(/\s+$/, "") + "\n\n\n" + menu;
 }

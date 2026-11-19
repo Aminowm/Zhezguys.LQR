@@ -25,6 +25,8 @@ export interface Part {
   h?: number; // height
   mass: number; // g (used for custom attachments; catalog parts take the catalog mass)
   name?: string;
+  /** LEGO colour of beams, frames and attachments (hex) */
+  color?: string;
 }
 
 export interface RobotBuild {

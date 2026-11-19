@@ -1,5 +1,4 @@
 // Turn a route drawn on the table into Pybricks code using the team's functions.
-import { mmToMotorDeg } from "../sim/robot";
 import type { Pose } from "../sim/physics";
 
 export interface RouteStep {
@@ -35,16 +34,15 @@ export function routeSteps(points: [number, number][], start: Pose): RouteStep[]
   return steps;
 }
 
-export function routeToCode(points: [number, number][], start: Pose, wheelDiameterMm: number, power = 60) {
+export function routeToCode(points: [number, number][], start: Pose) {
   const steps = routeSteps(points, start);
   const lines = ["# route drawn on the table"];
   let h = 0;
   for (const s of steps) {
     const target = Math.round(s.heading);
-    if (Math.abs(target - h) >= 1) lines.push(`turn_lqr(${target})`);
+    if (Math.abs(target - h) >= 1) lines.push(`turn(${target - h})`);
     h = target;
-    const deg = Math.round(mmToMotorDeg(s.mm, wheelDiameterMm));
-    lines.push(`straight_lqr(${deg}, ${s.backwards ? -power : power}, ${target})  # ${Math.round(s.mm)} mm`);
+    lines.push(`straight(${s.backwards ? "-" : ""}${Math.round(s.mm)}, **NORMAL)`);
   }
   return lines.join("\n") + "\n";
 }

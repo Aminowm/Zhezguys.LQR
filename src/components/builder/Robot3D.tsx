@@ -1,72 +1,14 @@
 // 3D robot configurator view (three.js via react-three-fiber).
 // Robot frame (x forward, y right, z up) → three.js (X = y, Y = z, Z = −x).
-import { useMemo, useRef } from "react";
+import { ReactElement, useRef } from "react";
 import { Canvas, ThreeEvent } from "@react-three/fiber";
-import { OrbitControls, Grid, Edges } from "@react-three/drei";
+import { OrbitControls, Grid, Edges, RoundedBox, Environment, Lightformer, ContactShadows } from "@react-three/drei";
 import * as THREE from "three";
+import { partColor } from "../../robot/colors";
+import { BallCaster, ColorSensor, DistanceSensor, ForceSensor, Liftarm, OpenFrame, Plastic, SpikeHub, SpikeMotor, TechnicBrick, Wheel } from "./parts3d";
 import { buildStats, fixedParts, Part, partHeight, partZ, RobotBuild, wheelWidth } from "../../robot/build";
 
 const snap = (v: number, s = 4) => Math.round(v / s) * s;
-
-const COLORS: Record<string, string> = {
-  hub: "#f5f6fa",
-  motorL: "#f5f6fa",
-  motorM: "#f5f6fa",
-  colorSensor: "#f5f6fa",
-  distanceSensor: "#f5f6fa",
-  forceSensor: "#f5f6fa",
-  beam: "#3aa7e8",
-  thin: "#8ccff5",
-  openFrame: "#e9edf6",
-  brick: "#f2c230",
-  frame: "#3f6fe0",
-  attachment: "#f59e0b",
-};
-
-// Technic hole strip texture, made once and cloned per beam length.
-let holeTex: THREE.CanvasTexture | null = null;
-function holeTexture(color: string) {
-  if (!holeTex) {
-    const c = document.createElement("canvas");
-    c.width = 64;
-    c.height = 64;
-    const g = c.getContext("2d")!;
-    g.fillStyle = "#ffffff";
-    g.fillRect(0, 0, 64, 64);
-    g.fillStyle = "#1b2a52";
-    g.beginPath();
-    g.arc(32, 32, 15, 0, Math.PI * 2);
-    g.fill();
-    holeTex = new THREE.CanvasTexture(c);
-    holeTex.wrapS = THREE.RepeatWrapping;
-    holeTex.colorSpace = THREE.SRGBColorSpace;
-  }
-  void color;
-  return holeTex;
-}
-
-function BeamMaterials({ p, color }: { p: Part; color: string }) {
-  const along = p.len >= p.wid; // holes visible on the long sides
-  const n = Math.max(1, Math.round((along ? p.len : p.wid) / 8));
-  const tex = useMemo(() => {
-    const t = holeTexture(color).clone();
-    t.repeat.set(n, 1);
-    t.needsUpdate = true;
-    return t;
-  }, [n, color]);
-  // box faces: +X, −X, +Y, −Y, +Z, −Z  (three.js)
-  return along ? (
-    <>
-      {[0, 1].map((i) => <meshStandardMaterial key={i} attach={`material-${i}`} color={color} map={tex} roughness={0.55} />)}
-      {[2, 3, 4, 5].map((i) => <meshStandardMaterial key={i} attach={`material-${i}`} color={color} roughness={0.55} />)}
-    </>
-  ) : (
-    <>
-      {[0, 1, 2, 3].map((i) => <meshStandardMaterial key={i} attach={`material-${i}`} color={color} roughness={0.55} />)}
-      {[4, 5].map((i) => <meshStandardMaterial key={i} attach={`material-${i}`} color={color} map={tex} roughness={0.55} />)}
-    </>
-  );
-}
 
 function PartMesh({ p, b, selected, onDown, onMove, onUp }: {
   p: Part;
@@ -79,76 +21,54 @@ function PartMesh({ p, b, selected, onDown, onMove, onUp }: {
   const h = partHeight(p);
   const z = partZ(p, b);
   const pos: [number, number, number] = [p.y, z + h / 2, -p.x];
-  const isThin = p.kind === "beam" && h <= 4.5;
-  const color = isThin ? COLORS.thin : COLORS[p.kind] ?? "#cccccc";
+  const color = partColor(p);
   const handlers = { onPointerDown: (e: ThreeEvent<PointerEvent>) => onDown(e, p), onPointerMove: onMove, onPointerUp: onUp };
-  const edge = selected ? <Edges scale={1.02} threshold={15} color="#1e4fd8" lineWidth={2.5} /> : null;
+  const dims = { wid: p.wid, h, len: p.len };
 
-  if (p.kind === "openFrame") {
-    const t = 8; // frame bar width
-    const bars: [number, number, number, number][] = [
-      [0, -p.len / 2 + t / 2, p.wid, t],
-      [0, p.len / 2 - t / 2, p.wid, t],
-      [-p.wid / 2 + t / 2, 0, t, p.len - 2 * t],
-      [p.wid / 2 - t / 2, 0, t, p.len - 2 * t],
-    ];
-    return (
-      <group position={pos} {...handlers}>
-        {bars.map(([x, zz, w, l], i) => (
-          <mesh key={i} position={[x, 0, zz]} castShadow receiveShadow>
-            <boxGeometry args={[w, h, l]} />
-            <meshStandardMaterial color={COLORS.openFrame} roughness={0.5} />
-          </mesh>
-        ))}
-        {selected && (
-          <mesh>
-            <boxGeometry args={[p.wid, h, p.len]} />
-            <meshBasicMaterial transparent opacity={0} />
-            {edge}
-          </mesh>
-        )}
-      </group>
-    );
+  let body: ReactElement;
+  switch (p.kind) {
+    case "hub":
+      body = <SpikeHub {...dims} />;
+      break;
+    case "motorL":
+    case "motorM":
+      body = <SpikeMotor {...dims} out={{ axis: "y", sign: 1 }} />;
+      break;
+    case "colorSensor":
+      body = <ColorSensor {...dims} />;
+      break;
+    case "distanceSensor":
+      body = <DistanceSensor {...dims} />;
+      break;
+    case "forceSensor":
+      body = <ForceSensor {...dims} />;
+      break;
+    case "beam":
+      body = <Liftarm {...dims} color={color} />;
+      break;
+    case "brick":
+      body = <TechnicBrick {...dims} color={color} />;
+      break;
+    case "openFrame":
+      body = <OpenFrame {...dims} color={color} />;
+      break;
+    default:
+      // chassis estimate and custom attachments: a tinted see-through volume
+      body = (
+        <RoundedBox args={[p.wid, h, p.len]} radius={Math.min(3, h / 3)} smoothness={3}>
+          <Plastic color={color} opacity={p.kind === "frame" ? 0.28 : 0.55} />
+          <Edges threshold={20} color={color} />
+        </RoundedBox>
+      );
   }
-
   return (
     <group position={pos} {...handlers}>
-      <mesh castShadow receiveShadow>
-        <boxGeometry args={[p.wid, h, p.len]} />
-        {p.kind === "beam" || p.kind === "brick" ? (
-          <BeamMaterials p={p} color={color} />
-        ) : (
-          <meshStandardMaterial
-            color={color}
-            roughness={0.45}
-            transparent={p.kind === "attachment" || p.kind === "frame"}
-            opacity={p.kind === "attachment" ? 0.7 : p.kind === "frame" ? 0.35 : 1}
-          />
-        )}
-        {edge}
-      </mesh>
-      {p.kind === "hub" && (
-        <>
-          <mesh position={[0, h / 2 + 0.6, -p.len * 0.08]}>
-            <boxGeometry args={[p.wid - 14, 1.2, p.wid - 14]} />
-            <meshStandardMaterial color="#1b2238" roughness={0.3} />
-          </mesh>
-          <mesh position={[0, h / 2 + 1, p.len / 2 - 14]}>
-            <cylinderGeometry args={[6, 6, 2, 24]} />
-            <meshStandardMaterial color="#d7dbe6" />
-          </mesh>
-        </>
-      )}
-      {(p.kind === "motorL" || p.kind === "motorM") && (
-        <mesh position={[0, h / 2 + 0.8, -p.len / 2 + 14]}>
-          <cylinderGeometry args={[Math.min(p.wid, 28) / 2 - 2, Math.min(p.wid, 28) / 2 - 2, 1.6, 28]} />
-          <meshStandardMaterial color="#14a3c8" />
-        </mesh>
-      )}
-      {(p.kind === "colorSensor" || p.kind === "distanceSensor" || p.kind === "forceSensor") && (
-        <mesh position={[0, -h / 2 - 0.3, 0]} rotation={[Math.PI / 2, 0, 0]}>
-          <circleGeometry args={[6, 20]} />
-          <meshStandardMaterial color={p.kind === "forceSensor" ? "#e0a000" : "#1b2238"} side={THREE.DoubleSide} />
+      {body}
+      {selected && (
+        <mesh>
+          <boxGeometry args={[p.wid + 1.5, h + 1.5, p.len + 1.5]} />
+          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+          <Edges threshold={15} color="#1d6fd8" lineWidth={2.5} />
         </mesh>
       )}
     </group>
@@ -197,78 +117,61 @@ export default function Robot3D({ value: b, onChange, selected, onSelect, dark }
     if (controls.current) controls.current.enabled = true;
   };
 
-  const bg = dark ? "#0b1230" : "#eef2fb";
   return (
     <Canvas
       shadows
       dpr={[1, 2]}
+      gl={{ alpha: true, antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.05 }}
       camera={{ position: [210, 190, 250], fov: 38, near: 1, far: 4000 }}
       onPointerMissed={() => onSelect(null)}
-      style={{ borderRadius: 20, touchAction: "none" }}
+      style={{ touchAction: "none", background: "var(--stage)" }}
     >
-      <color attach="background" args={[bg]} />
-      <hemisphereLight args={["#ffffff", dark ? "#1b2a5a" : "#c9d6f2", 0.9]} />
-      <directionalLight position={[220, 420, 160]} intensity={1.6} castShadow shadow-mapSize={[1024, 1024]} shadow-camera-left={-300} shadow-camera-right={300} shadow-camera-top={300} shadow-camera-bottom={-300} />
+      {/* studio lighting made on the fly (no downloads): soft boxes around the robot */}
+      <Environment resolution={256} frames={1}>
+        <Lightformer form="rect" intensity={2.2} position={[0, 6, 2]} scale={[10, 4, 1]} rotation={[Math.PI / 2.2, 0, 0]} />
+        <Lightformer form="rect" intensity={1.4} position={[-6, 2, 4]} scale={[6, 3, 1]} rotation={[0, -Math.PI / 4, 0]} />
+        <Lightformer form="rect" intensity={1.1} position={[6, 2, -4]} scale={[6, 3, 1]} rotation={[0, Math.PI * 0.75, 0]} color="#dbe9ff" />
+        <Lightformer form="ring" intensity={0.8} position={[0, 3, -8]} scale={4} color="#fff4e2" />
+      </Environment>
+      <ambientLight intensity={0.15} />
+      <directionalLight position={[220, 420, 160]} intensity={1.1} castShadow shadow-mapSize={[1024, 1024]} shadow-bias={-0.0004} shadow-camera-left={-300} shadow-camera-right={300} shadow-camera-top={300} shadow-camera-bottom={-300} />
       <OrbitControls ref={controls} makeDefault enableDamping target={[0, 40, -10]} minDistance={140} maxDistance={1200} maxPolarAngle={Math.PI / 2.05} />
       <Grid
         args={[800, 800]}
+        position={[0, -0.3, 0]}
         cellSize={8}
-        cellThickness={0.6}
-        cellColor={dark ? "#24336a" : "#c9d3ec"}
+        cellThickness={0.5}
+        cellColor={dark ? "#2b3a5c" : "#d9e3ef"}
         sectionSize={40}
-        sectionThickness={1}
-        sectionColor={dark ? "#3a4f96" : "#9fb0dc"}
+        sectionThickness={0.9}
+        sectionColor={dark ? "#3f5785" : "#a9c3dd"}
         fadeDistance={900}
         fadeStrength={1.5}
         infiniteGrid
       />
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.2, 0]} receiveShadow>
-        <planeGeometry args={[1600, 1600]} />
-        <shadowMaterial opacity={dark ? 0.35 : 0.18} />
-      </mesh>
+      <ContactShadows position={[0, 0.05, 0]} scale={700} resolution={1024} blur={2.2} far={180} opacity={dark ? 0.7 : 0.42} color="#0b1a33" />
 
       {/* forward arrow on the floor */}
       <mesh position={[0, 0.5, -(stats.axleToFrontMm + 40)]} rotation={[-Math.PI / 2, 0, Math.PI]}>
         <coneGeometry args={[14, 30, 3]} />
-        <meshBasicMaterial color="#1e4fd8" />
+        <meshBasicMaterial color="#2c7be5" />
       </mesh>
 
       {/* drive wheels */}
       {f.wheels.map((w, i) => (
-        <group key={"w" + i} position={[w.y, r, 0]} rotation={[0, 0, Math.PI / 2]}>
-          <mesh castShadow>
-            <cylinderGeometry args={[r, r, ww, 40]} />
-            <meshStandardMaterial color="#1c2030" roughness={0.9} />
-          </mesh>
-          <mesh position={[0, (i === 0 ? -1 : 1) * (ww / 2 + 0.2), 0]}>
-            <cylinderGeometry args={[r * 0.62, r * 0.62, 0.6, 32]} />
-            <meshStandardMaterial color="#d9deea" />
-          </mesh>
+        <group key={"w" + i} position={[w.y, r, 0]} rotation={[0, i === 0 ? Math.PI : 0, 0]}>
+          <Wheel d={b.wheelDiameterMm} w={ww} />
         </group>
       ))}
-      {/* drive motors */}
+      {/* drive motors, output disc facing the wheel */}
       {f.motors.map((m, i) => (
         <group key={"m" + i} position={[m.y, m.z + ms.h / 2, -m.x]}>
-          <mesh castShadow>
-            <boxGeometry args={[ms.wid, ms.h, ms.len]} />
-            <meshStandardMaterial color="#f5f6fa" roughness={0.45} />
-          </mesh>
-          <mesh position={[(i === 0 ? -1 : 1) * (ms.wid / 2 + 0.6), 0, -ms.len / 2 + 14]} rotation={[0, 0, Math.PI / 2]}>
-            <cylinderGeometry args={[11, 11, 1.2, 28]} />
-            <meshStandardMaterial color="#14a3c8" />
-          </mesh>
+          <SpikeMotor wid={ms.wid} h={ms.h} len={ms.len} out={{ axis: "x", sign: i === 0 ? -1 : 1 }} discZ={-ms.len / 2 + 14} />
         </group>
       ))}
       {/* caster */}
       <group position={[0, 0, -b.casterX]}>
-        <mesh position={[0, 8, 0]} castShadow>
-          {b.caster === "ball" ? <sphereGeometry args={[8, 24, 16]} /> : <boxGeometry args={[24, 6, 14]} />}
-          <meshStandardMaterial color={b.caster === "ball" ? "#c8ccd6" : "#9aa3b8"} metalness={0.4} roughness={0.35} />
-        </mesh>
-        <mesh position={[0, 20, 0]} castShadow>
-          <boxGeometry args={[24, 10, 24]} />
-          <meshStandardMaterial color="#e9edf6" />
-        </mesh>
+        <BallCaster kind={b.caster} />
       </group>
 
       {/* user parts */}
