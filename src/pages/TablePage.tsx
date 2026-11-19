@@ -233,7 +233,7 @@ export default function TablePage() {
       notify(t("table.pathEmpty"));
       return;
     }
-    const code = routeToCode(path.points, active.start, ws.robot.wheelDiameterMm);
+    const code = routeToCode(path.points, active.start);
     const base = active.code.endsWith("\n") ? active.code : active.code + "\n";
     updateProgram(active.id, { code: base + code });
     setTab("code");

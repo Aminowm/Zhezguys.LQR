@@ -1,101 +1,58 @@
-// Auto-tuner: turns a robot profile into gains for the team's own functions.
-//
-// 1. Build the yaw model of the robot from its mass, size, wheels and motors:
-//      heading'' = a·heading' + b·u        (u = motor power %, heading in degrees)
-// 2. Solve the LQR Riccati equation for that model → K1 (error) and K2 (error rate).
-// 3. Refine K1/K2 (and PID gains, and DriveBase settings) by running the
-//    real control loop in the simulator for several turn angles and keeping
-//    the fastest settings that end on target with little overshoot.
+// Robot page "auto-tune":
+//  • LQR needs no guessing: its gains come from the robot model (Riccati),
+//    we only show what they are and how the robot will behave.
+//  • PID gains have to be searched — we try many in the simulator.
+//  • For the Pybricks gyro the team can only change turn rate / acceleration.
 
 import { breakawayTurnPower, derive, RobotProfile } from "../sim/robot";
 import {
-  LQR_DEFAULT, LqrTurnParams, PID_DEFAULT, PidTurnParams, DbTurnParams,
-  simTurnLqr, simTurnPid, simTurnGyro, TurnMetrics, simStraightHold,
-  STRAIGHT_LQR_DEFAULT, STRAIGHT_PID_DEFAULT, StraightHoldParams,
+  GYRO_DEFAULT, GyroSettings, LQR_DEFAULT, LqrSettings, lqrGains, modelConstants, ModelConstants, PID_DEFAULT, PidSettings, PRESETS,
+  simGyroStraight, simGyroTurn, simLqrStraight, simLqrTurn, simPidStraight, simPidTurn, TurnMetrics,
 } from "./controllers";
 
 export interface YawModel {
-  a: number; // 1/s (negative: motors' own braking)
-  b: number; // deg/s² per %
-  steadyRate: number; // deg/s per % at steady state
-  timeConstant: number; // s
-  breakaway: number; // % needed to start turning
-  inertia: number; // kg·m²
+  a: number;
+  b: number;
+  steadyRate: number;
+  timeConstant: number;
+  breakaway: number;
+  inertia: number;
 }
 
 export function yawModel(p: RobotProfile): YawModel {
   const d = derive(p);
-  return {
-    a: d.yawA,
-    b: d.yawB,
-    steadyRate: -d.yawB / d.yawA,
-    timeConstant: -1 / d.yawA,
-    breakaway: breakawayTurnPower(p),
-    inertia: d.Jeff,
-  };
+  return { a: d.yawA, b: d.yawB, steadyRate: -d.yawB / d.yawA, timeConstant: -1 / d.yawA, breakaway: breakawayTurnPower(p), inertia: d.Jeff };
 }
 
-export interface LqrWeights {
-  q1: number; // weight on heading error
-  q2: number; // weight on error rate
-  r: number; // weight on motor power
-}
-
-/** Bryson's rule: weight = 1 / (largest acceptable value)². */
-export function brysonWeights(maxErrorDeg = 15, maxRateDeg = 600, maxPower = 80): LqrWeights {
-  return { q1: 1 / (maxErrorDeg * maxErrorDeg), q2: 1 / (maxRateDeg * maxRateDeg), r: 1 / (maxPower * maxPower) };
-}
-
-/**
- * Closed-form LQR for x = [e, e'], e'' = a·e' − b·u, u = K1·e + K2·e'.
- * (Continuous algebraic Riccati equation of a 2×2 system.)
- */
-export function solveYawLqr(m: YawModel, w: LqrWeights) {
-  const { a, b } = m;
-  const p2 = Math.sqrt(w.q1 * w.r) / b;
-  const K1 = Math.sqrt(w.q1 / w.r);
-  const s = a * a + ((b * b) / w.r) * (2 * p2 + w.q2);
-  const p3 = (w.r * (a + Math.sqrt(s))) / (b * b);
-  const K2 = (b * p3) / w.r;
-  // closed-loop poles of the linear model
-  const c1 = -a + b * K2;
-  const c0 = b * K1;
-  const disc = c1 * c1 - 4 * c0;
-  const wn = Math.sqrt(c0);
-  const zeta = c1 / (2 * wn);
-  return { K1, K2, wn, zeta, overdamped: disc >= 0 };
-}
-
-const TURN_SET = [90, -45, 180, 30];
+export const TURN_SET = [90, -45, 180, 30];
+export const STRAIGHT_SET = [600, 1200];
 
 export interface TurnScore {
   cost: number;
   meanTime: number;
   meanOvershoot: number;
+  meanFinalError: number;
   maxFinalError: number;
   timeouts: number;
   runs: TurnMetrics[];
 }
 
 export function scoreTurns(runs: TurnMetrics[]): TurnScore {
-  let cost = 0;
-  let t = 0;
-  let o = 0;
-  let fe = 0;
-  let timeouts = 0;
+  let cost = 0, t = 0, o = 0, fe = 0, fm = 0, timeouts = 0;
   for (const r of runs) {
     const err = Math.abs(r.finalError);
     t += r.returnMs;
     o += r.overshoot;
+    fm += err;
     fe = Math.max(fe, err);
     if (r.timedOut) timeouts++;
-    cost += r.returnMs / 1000 + 0.06 * r.overshoot + 1.5 * Math.max(0, err - 0.4) + (r.timedOut ? 2 : 0);
+    cost += r.returnMs / 1000 + 0.06 * r.overshoot + 1.5 * Math.max(0, err - 0.3) + (r.timedOut ? 2 : 0);
   }
-  return { cost: cost / runs.length, meanTime: t / runs.length, meanOvershoot: o / runs.length, maxFinalError: fe, timeouts, runs };
+  const n = runs.length;
+  return { cost: cost / n, meanTime: t / n, meanOvershoot: o / n, meanFinalError: fm / n, maxFinalError: fe, timeouts, runs };
 }
 
-/** Nelder–Mead on log-parameters (keeps every gain positive). */
-function nelderMead(f: (x: number[]) => number, x0: number[], iters = 60, step = 0.35) {
+function nelderMead(f: (x: number[]) => number, x0: number[], iters = 50, step = 0.35) {
   const n = x0.length;
   let simplex = [x0.slice()];
   for (let i = 0; i < n; i++) {
@@ -105,7 +62,7 @@ function nelderMead(f: (x: number[]) => number, x0: number[], iters = 60, step =
   }
   let vals = simplex.map(f);
   for (let k = 0; k < iters; k++) {
-    const order = vals.map((v, i) => [v, i]).sort((A, B) => A[0] - B[0]).map((p) => p[1]);
+    const order = vals.map((v, i) => [v, i]).sort((A, B) => A[0] - B[0]).map((q) => q[1]);
     simplex = order.map((i) => simplex[i]);
     vals = order.map((i) => vals[i]);
     const cen = new Array(n).fill(0);
@@ -116,206 +73,125 @@ function nelderMead(f: (x: number[]) => number, x0: number[], iters = 60, step =
     if (fr < vals[0]) {
       const exp = cen.map((c, j) => c + 2 * (c - worst[j]));
       const fe = f(exp);
-      if (fe < fr) {
-        simplex[n] = exp;
-        vals[n] = fe;
-      } else {
-        simplex[n] = refl;
-        vals[n] = fr;
-      }
-    } else if (fr < vals[n - 1]) {
-      simplex[n] = refl;
-      vals[n] = fr;
-    } else {
+      if (fe < fr) [simplex[n], vals[n]] = [exp, fe];
+      else [simplex[n], vals[n]] = [refl, fr];
+    } else if (fr < vals[n - 1]) [simplex[n], vals[n]] = [refl, fr];
+    else {
       const con = cen.map((c, j) => c + 0.5 * (worst[j] - c));
       const fc = f(con);
-      if (fc < vals[n]) {
-        simplex[n] = con;
-        vals[n] = fc;
-      } else {
+      if (fc < vals[n]) [simplex[n], vals[n]] = [con, fc];
+      else
         for (let i = 1; i <= n; i++) {
           simplex[i] = simplex[i].map((v, j) => simplex[0][j] + 0.5 * (v - simplex[0][j]));
           vals[i] = f(simplex[i]);
         }
-      }
     }
   }
   const best = vals.indexOf(Math.min(...vals));
   return { x: simplex[best], f: vals[best] };
 }
 
-export interface LqrTuneResult {
-  model: YawModel;
-  analytic: { K1: number; K2: number; zeta: number; wn: number };
-  params: LqrTurnParams;
-  before: TurnScore;
-  after: TurnScore;
-  /** values for the team's function signature turn_lqr(..., Q, R, b, kd, Minpower) */
-  signature: { Q: number; R: number; b: number; kd: number; Minpower: number };
+export interface LqrResult {
+  model: ModelConstants;
+  gains: { turn: [number, number]; drive: [number, number]; hold: [number, number] };
+  zeta: number;
+  score: TurnScore;
 }
 
-export function tuneLqr(p: RobotProfile, current: LqrTurnParams = LQR_DEFAULT, Q = 1, R = 0.01): LqrTuneResult {
-  const model = yawModel(p);
-  const analytic = solveYawLqr(model, brysonWeights(15, 600, current.Maxpower));
-  const minP = Math.min(30, Math.max(6, Math.ceil(model.breakaway + 1.5)));
-  const evalP = (K1: number, K2: number) => ({ ...current, K1, K2, Minpower: minP });
-  const runSet = (prm: LqrTurnParams) => scoreTurns(TURN_SET.map((a) => simTurnLqr(p, a, prm)));
-  const before = runSet(current);
-  // Start from whichever is better: analytic LQR or the team's current gains.
-  const startA = runSet(evalP(analytic.K1, analytic.K2)).cost;
-  const startC = runSet(evalP(current.K1, current.K2)).cost;
-  const x0 = startA < startC ? [Math.log(analytic.K1), Math.log(analytic.K2)] : [Math.log(current.K1), Math.log(current.K2)];
-  const res = nelderMead((x) => {
-    const K1 = Math.exp(x[0]);
-    const K2 = Math.exp(x[1]);
-    if (K1 > 40 || K2 > 2) return 99;
-    return runSet(evalP(K1, K2)).cost;
-  }, x0, 45);
-  const params = evalP(Math.exp(res.x[0]), Math.exp(res.x[1]));
-  const after = runSet(params);
-  return {
-    model,
-    analytic,
-    params,
-    before,
-    after,
-    signature: { Q, R, b: Math.sqrt(Q / R) / params.K1, kd: params.K2, Minpower: params.Minpower },
-  };
+export function lqrResult(p: RobotProfile, L: LqrSettings = LQR_DEFAULT): LqrResult {
+  const m = modelConstants(p);
+  const turn = lqrGains(m.YAW_A, m.YAW_B, L.TURN_E_MAX, L.TURN_RATE_MAX, 100);
+  const drive = lqrGains(m.LIN_A, m.LIN_B, L.DRIVE_E_MAX, L.DRIVE_V_MAX, 60);
+  const hold = lqrGains(m.YAW_A, m.YAW_B, L.HOLD_E_MAX, L.HOLD_RATE_MAX, 40);
+  const c1 = -m.YAW_A + m.YAW_B * turn[1];
+  const zeta = c1 / (2 * Math.sqrt(m.YAW_B * turn[0]));
+  return { model: m, gains: { turn, drive, hold }, zeta, score: scoreTurns(TURN_SET.map((a, i) => simLqrTurn(p, a, 100, L, 11 + i))) };
 }
 
 export interface PidTuneResult {
-  params: PidTurnParams;
+  params: PidSettings;
   before: TurnScore;
   after: TurnScore;
 }
 
-export function tunePid(p: RobotProfile, current: PidTurnParams = PID_DEFAULT): PidTuneResult {
-  const model = yawModel(p);
-  const minP = Math.min(30, Math.max(6, Math.ceil(model.breakaway + 1.5)));
-  const runSet = (prm: PidTurnParams) => scoreTurns(TURN_SET.map((a) => simTurnPid(p, a, prm)));
+export function tunePid(p: RobotProfile, current: PidSettings = PID_DEFAULT): PidTuneResult {
+  const minP = Math.min(30, Math.max(6, Math.ceil(breakawayTurnPower(p) + 1.5)));
+  const runSet = (prm: PidSettings) => scoreTurns(TURN_SET.map((a, i) => simPidTurn(p, a, 100, prm, 11 + i)));
   const before = runSet(current);
-  const mk = (x: number[]) => ({ ...current, Kp: Math.exp(x[0]), Kd: Math.exp(x[1]), Ki: Math.exp(x[2]) - 0.01, Minpower: minP });
+  const mk = (x: number[]): PidSettings => ({ ...current, PID_KP: Math.exp(x[0]), PID_KD: Math.exp(x[1]), PID_KI: Math.max(0, Math.exp(x[2]) - 0.01), PID_MINPOWER: minP });
   const res = nelderMead((x) => {
     const prm = mk(x);
-    if (prm.Kp > 40 || prm.Kd > 2 || prm.Ki > 20) return 99;
+    if (prm.PID_KP > 40 || prm.PID_KD > 2 || prm.PID_KI > 20) return 99;
     return runSet(prm).cost;
-  }, [Math.log(current.Kp), Math.log(Math.max(0.01, current.Kd)), Math.log(Math.max(0, current.Ki) + 0.01)], 50);
+  }, [Math.log(current.PID_KP), Math.log(Math.max(0.01, current.PID_KD)), Math.log(Math.max(0, current.PID_KI) + 0.01)], 45);
   const params = mk(res.x);
-  params.Ki = Math.max(0, params.Ki);
   return { params, before, after: runSet(params) };
 }
 
-export interface DbTuneResult {
-  params: Required<DbTurnParams>;
+export interface GyroTuneResult {
+  params: GyroSettings;
   before: TurnScore;
   after: TurnScore;
 }
 
-export function tuneDriveBase(p: RobotProfile, current: DbTurnParams = { turn_rate: 180 }): DbTuneResult {
+export function tuneGyro(p: RobotProfile, current: GyroSettings = GYRO_DEFAULT): GyroTuneResult {
   const d = derive(p);
-  const defAcc = Math.round(d.wMaxDeg * 0.4 * 3);
-  const runSet = (prm: DbTurnParams) => scoreTurns(TURN_SET.map((a) => simTurnGyro(p, a, prm)));
+  const runSet = (prm: GyroSettings) => scoreTurns(TURN_SET.map((a, i) => simGyroTurn(p, a, 100, prm, 11 + i)));
   const before = runSet(current);
-  let best: Required<DbTurnParams> = { turn_rate: current.turn_rate, turn_acceleration: current.turn_acceleration ?? defAcc };
-  let bestCost = runSet(best).cost;
-  for (const rate of [150, 216, 300, 400, 500, 600]) {
+  let best = current;
+  let bestCost = before.cost;
+  for (const rate of [150, 216, 300, 400, 500, 600])
     for (const acc of [600, 1000, 1500, 2200, 3000]) {
       if (rate > d.wMaxDeg * 0.85) continue;
-      const c = runSet({ turn_rate: rate, turn_acceleration: acc }).cost;
+      const c = runSet({ GYRO_TURN_RATE: rate, GYRO_TURN_ACC: acc }).cost;
       if (c < bestCost) {
         bestCost = c;
-        best = { turn_rate: rate, turn_acceleration: acc };
+        best = { GYRO_TURN_RATE: rate, GYRO_TURN_ACC: acc };
       }
     }
-  }
   return { params: best, before, after: runSet(best) };
 }
 
-export interface StraightTuneResult {
-  params: StraightHoldParams;
-  before: { lateral: number; heading: number };
-  after: { lateral: number; heading: number };
+export interface StraightScore {
+  lateral: number; // mean |side drift| mm
+  dist: number; // mean |distance error| mm
+  heading: number; // mean |heading error| deg
+  ms: number;
 }
 
-function straightCost(p: RobotProfile, prm: StraightHoldParams) {
-  let lat = 0;
-  let head = 0;
-  let wob = 0;
-  for (const [deg, seed] of [[1200, 3], [600, 11]] as const) {
-    const m = simStraightHold(p, deg, prm, seed);
-    // wobble: how much the heading wiggles (high gains shake the robot)
-    let wobble = 0;
-    for (let i = 1; i < m.trace.h.length; i++) wobble += Math.abs(m.trace.h[i] - m.trace.h[i - 1]);
-    lat = Math.max(lat, Math.abs(m.lateralMm));
-    head = Math.max(head, Math.abs(m.headingError));
-    wob = Math.max(wob, wobble);
-  }
-  return { lat, head, cost: lat + 4 * head + 0.5 * wob };
-}
-
-export function tuneStraight(p: RobotProfile, kind: "lqr" | "pid", current?: StraightHoldParams): StraightTuneResult {
-  const base = current ?? (kind === "lqr" ? STRAIGHT_LQR_DEFAULT : STRAIGHT_PID_DEFAULT);
-  const b0 = straightCost(p, base);
-  const mk = (x: number[]): StraightHoldParams =>
-    kind === "lqr" ? { ...base, K1: Math.exp(x[0]), K2: Math.exp(x[1]) } : { ...base, Kp: Math.exp(x[0]), Kd: Math.exp(x[1]) };
-  const x0 = kind === "lqr" ? [Math.log(base.K1!), Math.log(base.K2!)] : [Math.log(base.Kp!), Math.log(Math.max(0.01, base.Kd!))];
-  const res = nelderMead((x) => {
-    const prm = mk(x);
-    const g1 = kind === "lqr" ? prm.K1! : prm.Kp!;
-    const g2 = kind === "lqr" ? prm.K2! : prm.Kd!;
-    if (g1 > 8 || g2 > 0.25) return 999;
-    return straightCost(p, prm).cost;
-  }, x0, 30);
-  const params = mk(res.x);
-  const a = straightCost(p, params);
-  return { params, before: { lateral: b0.lat, heading: b0.head }, after: { lateral: a.lat, heading: a.head } };
+function straightScore(runs: { lateralMm: number; distErr: number; headingError: number; returnMs: number }[]): StraightScore {
+  const n = runs.length;
+  return {
+    lateral: runs.reduce((s, r) => s + Math.abs(r.lateralMm), 0) / n,
+    dist: runs.reduce((s, r) => s + Math.abs(r.distErr), 0) / n,
+    heading: runs.reduce((s, r) => s + Math.abs(r.headingError), 0) / n,
+    ms: runs.reduce((s, r) => s + r.returnMs, 0) / n,
+  };
 }
 
 export interface FullTune {
-  lqr: LqrTuneResult;
+  lqr: LqrResult;
   pid: PidTuneResult;
-  db: DbTuneResult;
-  straightLqr: StraightTuneResult;
-  straightPid: StraightTuneResult;
+  gyro: GyroTuneResult;
+  straight: { lqr: StraightScore; pid: StraightScore; gyro: StraightScore };
   ms: number;
 }
 
 export interface TuneInputs {
-  lqr?: LqrTurnParams & { Q?: number; R?: number };
-  pid?: PidTurnParams;
-  db?: DbTurnParams;
-  straight?: StraightHoldParams;
+  lqr?: LqrSettings;
+  pid?: PidSettings;
+  gyro?: GyroSettings;
 }
 
 export function tuneAll(p: RobotProfile, cur: TuneInputs = {}): FullTune {
   const t0 = performance.now();
-  const lqr = tuneLqr(p, cur.lqr ?? LQR_DEFAULT, cur.lqr?.Q ?? 1, cur.lqr?.R ?? 0.01);
+  const lqr = lqrResult(p, cur.lqr ?? LQR_DEFAULT);
   const pid = tunePid(p, cur.pid ?? PID_DEFAULT);
-  const db = tuneDriveBase(p, cur.db ?? { turn_rate: 180 });
-  const straightLqr = tuneStraight(p, "lqr", cur.straight);
-  const straightPid = tuneStraight(p, "pid");
-  return { lqr, pid, db, straightLqr, straightPid, ms: performance.now() - t0 };
-}
-
-const round = (x: number, d = 3) => {
-  const k = Math.pow(10, d);
-  return Math.round(x * k) / k;
-};
-
-/** Rewrite default values in a `def name(...)` signature, keeping everything else. */
-export function applyDefaults(src: string, fn: string, values: Record<string, number>) {
-  const re = new RegExp(`def\\s+${fn}\\s*\\(([\\s\\S]*?)\\)\\s*:`);
-  const m = src.match(re);
-  if (!m) return { src, changed: [] as string[] };
-  let args = m[1];
-  const changed: string[] = [];
-  for (const [k, v] of Object.entries(values)) {
-    const ar = new RegExp(`(\\b${k}\\s*=\\s*)(-?[0-9.]+(?:[eE]-?[0-9]+)?)`);
-    if (ar.test(args)) {
-      args = args.replace(ar, `$1${round(v)}`);
-      changed.push(k);
-    }
-  }
-  const whole = m[0].replace(m[1], args);
-  return { src: src.replace(m[0], whole), changed };
+  const gyro = tuneGyro(p, cur.gyro ?? GYRO_DEFAULT);
+  const straight = {
+    lqr: straightScore(STRAIGHT_SET.map((mm, i) => simLqrStraight(p, mm, PRESETS.NORMAL, cur.lqr ?? LQR_DEFAULT, 21 + i))),
+    pid: straightScore(STRAIGHT_SET.map((mm, i) => simPidStraight(p, mm, PRESETS.NORMAL, cur.pid ?? PID_DEFAULT, 21 + i))),
+    gyro: straightScore(STRAIGHT_SET.map((mm, i) => simGyroStraight(p, mm, PRESETS.NORMAL, 21 + i))),
+  };
+  return { lqr, pid, gyro, straight, ms: performance.now() - t0 };
 }

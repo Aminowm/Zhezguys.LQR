@@ -4,9 +4,9 @@ import { motion } from "motion/react";
 import { Play, Loader2, RotateCcw, AlertTriangle, Trophy, Info } from "lucide-react";
 import { useApp } from "../state/app";
 import { useT } from "../i18n";
-import { DEFAULT_PROFILE, mmToMotorDeg, RobotProfile } from "../sim/robot";
+import { DEFAULT_PROFILE, RobotProfile } from "../sim/robot";
 import { buildProgram, DEFAULT_FILES, CodeFileId } from "../code/defaults";
-import { currentParams } from "../code/params";
+import { applyModel, currentSettings, hasNewApi } from "../code/params";
 import { runJobs, usePyStatus, warmPython } from "../sim/client";
 import type { RunOutput } from "../sim/runner";
 import { tuneRobot } from "../tuning/client";
@@ -14,14 +14,7 @@ import LineChart from "../components/LineChart";
 import { TurnArena, StraightArena, ArenaRun } from "../components/Arena";
 
 type Test = "turn" | "straight";
-type Gains = "code" | "typical" | "tuned";
-
-interface Tuned {
-  lqr: string;
-  pid: string;
-  gyro: { rate: number; acc: number };
-  straight: string;
-}
+type Gains = "code" | "tuned";
 
 const f3 = (x: number) => +x.toFixed(3);
 
@@ -53,21 +46,25 @@ export default function ComparePage() {
   const [angle, setAngle] = useState(90);
   const [dist, setDist] = useState(1000);
   const [robotSel, setRobotSel] = useState<"mine" | "default">(session ? "mine" : "default");
-  const [gains, setGains] = useState<Gains>("typical");
+  const [gains, setGains] = useState<Gains>("code");
   const [series, setSeries] = useState<SeriesRow[] | null>(null);
   const [rows, setRows] = useState<Row[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [time, setTime] = useState(0);
   const [playing, setPlaying] = useState(false);
-  const [tunedCache, setTunedCache] = useState<Record<string, Tuned>>({});
+  const [tunedCache, setTunedCache] = useState<Record<string, string>>({});
 
   useEffect(() => {
     warmPython();
   }, []);
 
-  const files: Record<CodeFileId, string> = session && ws ? ws.files : DEFAULT_FILES;
   const profile: RobotProfile = robotSel === "mine" && ws ? ws.robot : { ...DEFAULT_PROFILE };
+  // the team's own code (needs the straight / turn library), with this robot's model
+  const ownFiles = session && ws && hasNewApi(ws.files) ? ws.files : null;
+  const baseFiles: Record<CodeFileId, string> = ownFiles ?? DEFAULT_FILES;
+  const files: Record<CodeFileId, string> = { ...baseFiles, config: applyModel(baseFiles.config, profile) };
+  const oldCode = !!(session && ws && !ownFiles);
 
   const endT = useMemo(() => (rows ? Math.max(...rows.map((r) => r.out.frames.t[r.out.frames.t.length - 1] ?? 0)) : 0), [rows]);
   useEffect(() => {
@@ -91,65 +88,38 @@ export default function ComparePage() {
     return () => cancelAnimationFrame(raf);
   }, [playing, endT]);
 
-  const getTuned = async (): Promise<Tuned> => {
-    const key = JSON.stringify(profile) + "|" + files.lqr.length + files.pid.length + files.helpers.length;
+  /** Lines that set auto-tuned PID / gyro settings before the test program. */
+  const getTuned = async (): Promise<string> => {
+    const key = JSON.stringify(profile) + "|" + files.pid.length + files.config.length;
     if (tunedCache[key]) return tunedCache[key];
-    const cur = currentParams(files);
-    let tuned: Tuned;
-    if (robotSel === "mine" && ws?.tune && ws.tune.robotKey === JSON.stringify(profile)) {
-      const s = ws.tune;
-      tuned = {
-        lqr: `, Q=${s.lqr.Q}, R=${s.lqr.R}, b=${f3(s.lqr.b)}, kd=${f3(s.lqr.kd)}, Minpower=${s.lqr.Minpower}`,
-        pid: `, Kp=${f3(s.pid.Kp)}, Ki=${f3(s.pid.Ki)}, Kd=${f3(s.pid.Kd)}, Minpower=${s.pid.Minpower}`,
-        gyro: { rate: s.db.turn_rate, acc: s.db.turn_acceleration },
-        straight: `, Q=${s.straight.Q}, R=${s.straight.R}, b=${f3(s.straight.b)}, kd=${f3(s.straight.kd)}`,
-      };
-    } else {
-      const res = await tuneRobot(profile, { lqr: cur.lqr, pid: cur.pid, db: cur.db, straight: cur.straight });
-      const sig = res.lqr.signature;
-      const sQ = cur.straight.Q, sR = cur.straight.R;
-      tuned = {
-        lqr: `, Q=${sig.Q}, R=${sig.R}, b=${f3(sig.b)}, kd=${f3(sig.kd)}, Minpower=${sig.Minpower}`,
-        pid: `, Kp=${f3(res.pid.params.Kp)}, Ki=${f3(res.pid.params.Ki)}, Kd=${f3(res.pid.params.Kd)}, Minpower=${res.pid.params.Minpower}`,
-        gyro: { rate: res.db.params.turn_rate, acc: res.db.params.turn_acceleration },
-        straight: `, Q=${sQ}, R=${sR}, b=${f3(Math.sqrt(sQ / sR) / res.straightLqr.params.K1!)}, kd=${f3(res.straightLqr.params.K2!)}`,
-      };
-    }
-    setTunedCache((c) => ({ ...c, [key]: tuned }));
-    return tuned;
+    const cur = currentSettings(files);
+    const res = await tuneRobot(profile, cur);
+    const pp = res.pid.params;
+    const g = res.gyro.params;
+    const code = `PID_KP = ${f3(pp.PID_KP)}\nPID_KI = ${f3(pp.PID_KI)}\nPID_KD = ${f3(pp.PID_KD)}\nPID_MINPOWER = ${pp.PID_MINPOWER}\nGYRO_TURN_RATE = ${g.GYRO_TURN_RATE}\nGYRO_TURN_ACC = ${g.GYRO_TURN_ACC}\n`;
+    setTunedCache((c) => ({ ...c, [key]: code }));
+    return code;
   };
 
   const run = async () => {
     setBusy(true);
     setErr(null);
     try {
-      // code: everything as written in the team's code
-      // typical: LQR gets its gains from the robot model (that is how LQR works),
-      //          PID and the Pybricks gyro run as written in the code
-      // tuned: all three auto-tuned for this robot
-      const tn = gains !== "code" ? await getTuned() : null;
-      const all = gains === "tuned";
+      // code: everything exactly as in the code (LQR always takes its gains from the robot model)
+      // tuned: PID gains and the gyro's turn rate are first auto-tuned for this robot
+      const pre = gains === "tuned" ? await getTuned() : "";
+      const prog = (c: string, cmd: string) => `CONTROLLER = "${c}"\n${pre}${cmd}\n`;
       const turnProgs = (a: number) => [
-        { id: "lqr", label: t("compare.lqr"), color: "var(--c-lqr)", body: `Gyro_reset(0)\nturn_lqr(${a}${tn?.lqr ?? ""})\n` },
-        { id: "pid", label: t("compare.pid"), color: "var(--c-pid)", body: `Gyro_reset(0)\nturn_pid(${a}${all ? tn!.pid : ""})\n` },
-        {
-          id: "gyro",
-          label: t("compare.gyro"),
-          color: "var(--c-gyro)",
-          body: all
-            ? `Gyro_reset(0)\nDrive_base.settings(turn_rate=${tn!.gyro.rate}, turn_acceleration=${tn!.gyro.acc})\nDrive_base.turn(${a})\nDrive_base.stop()\n`
-            : `Gyro_reset(0)\nturn_gyro(${a})\n`,
-        },
+        { id: "lqr", label: t("compare.lqr"), color: "var(--c-lqr)", body: prog("LQR", `turn(${a})`) },
+        { id: "pid", label: t("compare.pid"), color: "var(--c-pid)", body: prog("PID", `turn(${a})`) },
+        { id: "gyro", label: t("compare.gyro"), color: "var(--c-gyro)", body: prog("GYRO", `turn(${a})`) },
       ];
-      const straightProgs = (mm: number) => {
-        const deg = Math.round(mmToMotorDeg(mm, profile.wheelDiameterMm));
-        return [
-          { id: "lqr", label: t("compare.lqr"), color: "var(--c-lqr)", body: `Gyro_reset(0)\nstraight_lqr(${deg}, 60, 0${tn?.straight ?? ""})\n` },
-          { id: "pid", label: t("compare.pid"), color: "var(--c-pid)", body: `Gyro_reset(0)\nstraight_pid(${deg}, 60, 0)\n` },
-          { id: "gyro", label: t("compare.gyro"), color: "var(--c-gyro)", body: `Gyro_reset(0)\nstraight_gyro(${mm})\n` },
-          { id: "open", label: t("compare.openLoop"), color: "var(--muted)", body: `move_deg(60, 60, ${deg})\n` },
-        ];
-      };
+      const straightProgs = (mm: number) => [
+        { id: "lqr", label: t("compare.lqr"), color: "var(--c-lqr)", body: prog("LQR", `straight(${mm}, **NORMAL)`) },
+        { id: "pid", label: t("compare.pid"), color: "var(--c-pid)", body: prog("PID", `straight(${mm}, **NORMAL)`) },
+        { id: "gyro", label: t("compare.gyro"), color: "var(--c-gyro)", body: prog("GYRO", `straight(${mm}, **NORMAL)`) },
+        { id: "open", label: t("compare.openLoop"), color: "var(--muted)", body: `move_mm(${mm}, 60)\n` },
+      ];
       const isTurn = test === "turn";
       const start = isTurn ? { x: 1181, y: 571, headingDeg: 0 } : { x: 250, y: 571, headingDeg: 0 };
       const main = isTurn ? turnProgs(angle) : straightProgs(dist);
@@ -284,7 +254,6 @@ export default function ComparePage() {
           <div className="field">
             <span className="label">{t("compare.gains")}</span>
             <div className="seg" role="group" aria-label={t("compare.gains")}>
-              <button aria-pressed={gains === "typical"} onClick={() => setGains("typical")}>{t("compare.gainsTypical")}</button>
               <button aria-pressed={gains === "code"} onClick={() => setGains("code")}>{t("compare.gainsCode")}</button>
               <button aria-pressed={gains === "tuned"} onClick={() => setGains("tuned")}>{t("compare.gainsTuned")}</button>
             </div>
@@ -294,8 +263,13 @@ export default function ComparePage() {
           </button>
         </div>
         <p className="small muted" style={{ margin: "12px 0 0" }}>
-          {gains === "typical" ? t("compare.hintTypical") : gains === "code" ? t("compare.hintCode") : t("compare.hintTuned")}
+          {gains === "code" ? t("compare.hintCode") : t("compare.hintTuned")}
         </p>
+        {oldCode && (
+          <div className="banner small" style={{ marginTop: 14 }}>
+            <Info size={16} /> <span>{t("compare.oldCode")}</span>
+          </div>
+        )}
         {!session && (
           <div className="banner small" style={{ marginTop: 14 }}>
             <Info size={16} /> <span>{t("compare.loginHint")} <Link to="/register">{t("nav.register")}</Link></span>

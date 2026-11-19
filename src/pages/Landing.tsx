@@ -22,14 +22,14 @@ export default function Landing() {
       if (!live) return;
       const pick = (id: string, label: string, color: string, tr: { t: number[]; h: number[] }) => ({ id, label, color, t: tr.t, h: tr.h });
       setRuns([
-        pick("lqr", "LQR", "var(--c-lqr)", res.lqr.after.runs[0].trace),
+        pick("lqr", "LQR", "var(--c-lqr)", res.lqr.score.runs[0].trace),
         pick("pid", "PID", "var(--c-pid)", res.pid.before.runs[0].trace),
-        pick("gyro", "Gyro", "var(--c-gyro)", res.db.before.runs[0].trace),
+        pick("gyro", "Gyro", "var(--c-gyro)", res.gyro.before.runs[0].trace),
       ]);
       setStats([
-        { id: "lqr", ms: res.lqr.after.runs[0].returnMs, err: res.lqr.after.runs[0].finalError },
+        { id: "lqr", ms: res.lqr.score.runs[0].returnMs, err: res.lqr.score.runs[0].finalError },
         { id: "pid", ms: res.pid.before.runs[0].returnMs, err: res.pid.before.runs[0].finalError },
-        { id: "gyro", ms: res.db.before.runs[0].returnMs, err: res.db.before.runs[0].finalError },
+        { id: "gyro", ms: res.gyro.before.runs[0].returnMs, err: res.gyro.before.runs[0].finalError },
       ]);
     });
     return () => {

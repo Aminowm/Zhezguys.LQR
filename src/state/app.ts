@@ -14,8 +14,7 @@ function takePendingRobot(): RobotProfile | null {
   }
 }
 function newWorkspace(robot: RobotProfile | null | undefined) {
-  const ws = defaultWorkspace();
-  return robot ? { ...ws, robot } : ws;
+  return robot ? defaultWorkspace(robot) : defaultWorkspace();
 }
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";

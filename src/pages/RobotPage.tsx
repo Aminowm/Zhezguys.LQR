@@ -10,8 +10,7 @@ import { applyBuild, buildFromProfile, RobotBuild } from "../robot/build";
 import LineChart from "../components/LineChart";
 import { tuneRobot, calibrateRobot } from "../tuning/client";
 import type { FullTune } from "../tuning/tuner";
-import { applyDefaults } from "../tuning/tuner";
-import { applyGyroSettings, currentParams } from "../code/params";
+import { applyConstants, applyModel, currentSettings } from "../code/params";
 import { calibrationProgram, parseCalibration, CalibrationFit } from "../tuning/calibrate";
 
 const PORTS: PortName[] = ["A", "B", "C", "D", "E", "F"];
@@ -92,13 +91,15 @@ export default function RobotPage({ setup }: { setup?: boolean }) {
   const p = ws?.robot;
   const d = useMemo(() => (p ? derive(p) : null), [p]);
   if (!ws || !p || !d) return null;
+  // every robot change also rewrites the model lines of config.py (LQR uses them)
+  const withModel = (w: typeof ws, robot: RobotProfile) => ({ ...w, robot, files: { ...w.files, config: applyModel(w.files.config, robot) } });
   const set = (patch: Partial<RobotProfile>) => {
-    update((w) => ({ ...w, robot: { ...w.robot, ...patch } }));
+    update((w) => withModel(w, { ...w.robot, ...patch }));
     setTune(null);
   };
   const build = p.build ?? buildFromProfile(p);
   const setBuild = (b: RobotBuild) => {
-    update((w) => ({ ...w, robot: applyBuild(w.robot, b) }));
+    update((w) => withModel(w, applyBuild(w.robot, b)));
     setTune(null);
   };
 
@@ -106,19 +107,15 @@ export default function RobotPage({ setup }: { setup?: boolean }) {
     setTuning(true);
     setApplied({});
     try {
-      const cur = currentParams(ws.files);
-      const res = await tuneRobot(p, { lqr: cur.lqr, pid: cur.pid, db: cur.db, straight: cur.straight });
+      const res = await tuneRobot(p, currentSettings(ws.files));
       setTune(res);
-      const sQ = cur.straight.Q, sR = cur.straight.R;
       update((w) => ({
         ...w,
         tune: {
           at: new Date().toISOString(),
           robotKey: JSON.stringify(p),
-          lqr: { Q: res.lqr.signature.Q, R: res.lqr.signature.R, b: res.lqr.signature.b, kd: res.lqr.signature.kd, Minpower: res.lqr.signature.Minpower },
-          pid: { Kp: res.pid.params.Kp, Ki: res.pid.params.Ki, Kd: res.pid.params.Kd, Minpower: res.pid.params.Minpower },
-          db: { turn_rate: res.db.params.turn_rate, turn_acceleration: res.db.params.turn_acceleration },
-          straight: { Q: sQ, R: sR, b: Math.sqrt(sQ / sR) / res.straightLqr.params.K1!, kd: res.straightLqr.params.K2! },
+          pid: { PID_KP: res.pid.params.PID_KP, PID_KI: res.pid.params.PID_KI, PID_KD: res.pid.params.PID_KD, PID_MINPOWER: res.pid.params.PID_MINPOWER },
+          gyro: { ...res.gyro.params },
         },
       }));
     } finally {
@@ -126,24 +123,16 @@ export default function RobotPage({ setup }: { setup?: boolean }) {
     }
   };
 
-  const apply = (which: "lqr" | "pid" | "db" | "straight") => {
+  const apply = (which: "pid" | "gyro") => {
     if (!tune) return;
-    let file = "lqr.py";
+    const file = which === "pid" ? "pid.py" : "config.py";
     update((w) => {
       const files = { ...w.files };
-      if (which === "lqr") {
-        const s = tune.lqr.signature;
-        files.lqr = applyDefaults(files.lqr, "turn_lqr", { b: s.b, kd: s.kd, Minpower: s.Minpower }).src;
-      } else if (which === "pid") {
+      if (which === "pid") {
         const q = tune.pid.params;
-        files.pid = applyDefaults(files.pid, "turn_pid", { Kp: q.Kp, Ki: q.Ki, Kd: q.Kd, Minpower: q.Minpower }).src;
-        file = "pid.py";
-      } else if (which === "db") {
-        files.helpers = applyGyroSettings(files.helpers, tune.db.params.turn_rate, tune.db.params.turn_acceleration);
-        file = "helpers.py";
+        files.pid = applyConstants(files.pid, { PID_KP: q.PID_KP, PID_KI: q.PID_KI, PID_KD: q.PID_KD, PID_MINPOWER: q.PID_MINPOWER }).src;
       } else {
-        const cur = currentParams(files).straight;
-        files.lqr = applyDefaults(files.lqr, "straight_lqr", { b: Math.sqrt(cur.Q / cur.R) / tune.straightLqr.params.K1!, kd: tune.straightLqr.params.K2! }).src;
+        files.config = applyConstants(files.config, { GYRO_TURN_RATE: tune.gyro.params.GYRO_TURN_RATE, GYRO_TURN_ACC: tune.gyro.params.GYRO_TURN_ACC }).src;
       }
       return { ...w, files };
     });
@@ -166,10 +155,7 @@ export default function RobotPage({ setup }: { setup?: boolean }) {
     }
   };
 
-  const lqrTrace = (k: "before" | "after") => {
-    const run = tune?.lqr[k].runs[0];
-    return run ? { x: run.trace.t, y: run.trace.h } : { x: [], y: [] };
-  };
+  const trace90 = (run?: { trace: { t: number[]; h: number[] } }) => (run ? { x: run.trace.t, y: run.trace.h } : { x: [], y: [] });
 
   return (
     <div className="page">
@@ -255,22 +241,23 @@ export default function RobotPage({ setup }: { setup?: boolean }) {
             <h2>{t("robot.results")}</h2>
             <div className="grid-2">
               <div className="card">
-                <div className="card-title"><span className="dot" style={{ background: "var(--c-lqr)" }} /><h3 style={{ margin: 0 }}>turn_lqr</h3></div>
-                <div className="small muted">{t("robot.analytic")}</div>
+                <div className="card-title"><span className="dot" style={{ background: "var(--c-lqr)" }} /><h3 style={{ margin: 0 }}>LQR — lqr.py</h3></div>
+                <p className="small muted">{t("robot.lqrModel")}</p>
                 <div className="formula" style={{ margin: "6px 0 10px" }}>
-                  K1 = {r(tune.lqr.analytic.K1)}, K2 = {r(tune.lqr.analytic.K2, 3)} · ζ = {r(tune.lqr.analytic.zeta)}
+                  YAW_A = {tune.lqr.model.YAW_A}, YAW_B = {tune.lqr.model.YAW_B}, LIN_A = {tune.lqr.model.LIN_A}, LIN_B = {tune.lqr.model.LIN_B}
                 </div>
-                <div className="small muted">{t("robot.refined")}</div>
                 <div className="formula" style={{ margin: "6px 0 10px" }}>
-                  turn_lqr(90, Q={tune.lqr.signature.Q}, R={tune.lqr.signature.R}, b={r(tune.lqr.signature.b, 3)}, kd={r(tune.lqr.signature.kd, 3)}, Minpower={tune.lqr.signature.Minpower})
+                  turn K = [{r(tune.lqr.gains.turn[0])}, {r(tune.lqr.gains.turn[1], 3)}] · ζ = {r(tune.lqr.zeta)}<br />
+                  drive K = [{r(tune.lqr.gains.drive[0])}, {r(tune.lqr.gains.drive[1], 3)}] · heading K = [{r(tune.lqr.gains.hold[0])}, {r(tune.lqr.gains.hold[1], 3)}]
                 </div>
-                <BeforeAfter
-                  rows={[
-                    { k: t("robot.avgTime"), before: `${Math.round(tune.lqr.before.meanTime)} ms`, after: `${Math.round(tune.lqr.after.meanTime)} ms`, better: tune.lqr.after.meanTime < tune.lqr.before.meanTime },
-                    { k: t("robot.overshoot"), before: `${r(tune.lqr.before.meanOvershoot, 1)}°`, after: `${r(tune.lqr.after.meanOvershoot, 1)}°`, better: tune.lqr.after.meanOvershoot < tune.lqr.before.meanOvershoot },
-                    { k: t("robot.finalErr"), before: `${r(tune.lqr.before.maxFinalError, 2)}°`, after: `${r(tune.lqr.after.maxFinalError, 2)}°`, better: tune.lqr.after.maxFinalError <= tune.lqr.before.maxFinalError },
-                  ]}
-                />
+                <table className="data">
+                  <tbody>
+                    <tr><td>{t("robot.avgTime")}</td><td className="num">{Math.round(tune.lqr.score.meanTime)} ms</td></tr>
+                    <tr><td>{t("robot.overshoot")}</td><td className="num">{r(tune.lqr.score.meanOvershoot, 1)}°</td></tr>
+                    <tr><td>{t("robot.meanErr")}</td><td className="num"><strong>{r(tune.lqr.score.meanFinalError, 2)}°</strong></td></tr>
+                    <tr><td>{t("robot.lateral")} (NORMAL)</td><td className="num">{r(tune.straight.lqr.lateral, 1)} mm</td></tr>
+                  </tbody>
+                </table>
                 <div style={{ marginTop: 12 }}>
                   <LineChart
                     height={190}
@@ -279,25 +266,24 @@ export default function RobotPage({ setup }: { setup?: boolean }) {
                     yUnit="°"
                     refY={{ value: 90, label: t("compare.targetLine") }}
                     series={[
-                      { id: "b", label: t("robot.before"), color: "var(--muted)", dashed: true, ...lqrTrace("before") },
-                      { id: "a", label: t("robot.after"), color: "var(--c-lqr)", ...lqrTrace("after") },
+                      { id: "l", label: "LQR", color: "var(--c-lqr)", ...trace90(tune.lqr.score.runs[0]) },
+                      { id: "p", label: "PID", color: "var(--c-pid)", dashed: true, ...trace90(tune.pid.before.runs[0]) },
+                      { id: "g", label: "Gyro", color: "var(--c-gyro)", dashed: true, ...trace90(tune.gyro.before.runs[0]) },
                     ]}
                   />
                 </div>
-                <button className="btn primary" style={{ marginTop: 12 }} onClick={() => apply("lqr")} disabled={applied.lqr}>
-                  {applied.lqr ? <Check size={16} /> : <Wand2 size={16} />} {applied.lqr ? t("common.applied") : t("robot.applyLqr")}
-                </button>
+                <p className="tiny muted" style={{ margin: "8px 0 0" }}>{t("robot.lqrAuto")}</p>
               </div>
 
               <div className="stack" style={{ gap: 16 }}>
                 <div className="card">
-                  <div className="card-title"><span className="dot" style={{ background: "var(--c-pid)" }} /><h3 style={{ margin: 0 }}>turn_pid</h3></div>
-                  <div className="formula" style={{ marginBottom: 10 }}>Kp={r(tune.pid.params.Kp, 3)}, Ki={r(tune.pid.params.Ki, 3)}, Kd={r(tune.pid.params.Kd, 3)}, Minpower={tune.pid.params.Minpower}</div>
+                  <div className="card-title"><span className="dot" style={{ background: "var(--c-pid)" }} /><h3 style={{ margin: 0 }}>PID — pid.py</h3></div>
+                  <div className="formula" style={{ marginBottom: 10 }}>PID_KP = {r(tune.pid.params.PID_KP, 3)}, PID_KI = {r(tune.pid.params.PID_KI, 3)}, PID_KD = {r(tune.pid.params.PID_KD, 3)}, PID_MINPOWER = {tune.pid.params.PID_MINPOWER}</div>
                   <BeforeAfter
                     rows={[
                       { k: t("robot.avgTime"), before: `${Math.round(tune.pid.before.meanTime)} ms`, after: `${Math.round(tune.pid.after.meanTime)} ms`, better: tune.pid.after.meanTime < tune.pid.before.meanTime },
                       { k: t("robot.overshoot"), before: `${r(tune.pid.before.meanOvershoot, 1)}°`, after: `${r(tune.pid.after.meanOvershoot, 1)}°`, better: tune.pid.after.meanOvershoot < tune.pid.before.meanOvershoot },
-                      { k: t("robot.finalErr"), before: `${r(tune.pid.before.maxFinalError, 2)}°`, after: `${r(tune.pid.after.maxFinalError, 2)}°`, better: tune.pid.after.maxFinalError <= tune.pid.before.maxFinalError },
+                      { k: t("robot.meanErr"), before: `${r(tune.pid.before.meanFinalError, 2)}°`, after: `${r(tune.pid.after.meanFinalError, 2)}°`, better: tune.pid.after.meanFinalError <= tune.pid.before.meanFinalError },
                     ]}
                   />
                   <button className="btn" style={{ marginTop: 12 }} onClick={() => apply("pid")} disabled={applied.pid}>
@@ -305,30 +291,33 @@ export default function RobotPage({ setup }: { setup?: boolean }) {
                   </button>
                 </div>
                 <div className="card">
-                  <div className="card-title"><span className="dot" style={{ background: "var(--c-gyro)" }} /><h3 style={{ margin: 0 }}>turn_gyro (DriveBase)</h3></div>
-                  <div className="formula" style={{ marginBottom: 10 }}>Drive_base.settings(turn_rate={tune.db.params.turn_rate}, turn_acceleration={tune.db.params.turn_acceleration})</div>
+                  <div className="card-title"><span className="dot" style={{ background: "var(--c-gyro)" }} /><h3 style={{ margin: 0 }}>Gyro (DriveBase) — config.py</h3></div>
+                  <div className="formula" style={{ marginBottom: 10 }}>GYRO_TURN_RATE = {tune.gyro.params.GYRO_TURN_RATE}, GYRO_TURN_ACC = {tune.gyro.params.GYRO_TURN_ACC}</div>
                   <BeforeAfter
                     rows={[
-                      { k: t("robot.avgTime"), before: `${Math.round(tune.db.before.meanTime)} ms`, after: `${Math.round(tune.db.after.meanTime)} ms`, better: tune.db.after.meanTime < tune.db.before.meanTime },
-                      { k: t("robot.finalErr"), before: `${r(tune.db.before.maxFinalError, 2)}°`, after: `${r(tune.db.after.maxFinalError, 2)}°`, better: tune.db.after.maxFinalError <= tune.db.before.maxFinalError },
+                      { k: t("robot.avgTime"), before: `${Math.round(tune.gyro.before.meanTime)} ms`, after: `${Math.round(tune.gyro.after.meanTime)} ms`, better: tune.gyro.after.meanTime < tune.gyro.before.meanTime },
+                      { k: t("robot.meanErr"), before: `${r(tune.gyro.before.meanFinalError, 2)}°`, after: `${r(tune.gyro.after.meanFinalError, 2)}°`, better: tune.gyro.after.meanFinalError <= tune.gyro.before.meanFinalError },
                     ]}
                   />
-                  <button className="btn" style={{ marginTop: 12 }} onClick={() => apply("db")} disabled={applied.db}>
-                    {applied.db ? <Check size={16} /> : <Wand2 size={16} />} {applied.db ? t("common.applied") : t("robot.applyDb")}
+                  <button className="btn" style={{ marginTop: 12 }} onClick={() => apply("gyro")} disabled={applied.gyro}>
+                    {applied.gyro ? <Check size={16} /> : <Wand2 size={16} />} {applied.gyro ? t("common.applied") : t("robot.applyDb")}
                   </button>
                 </div>
                 <div className="card">
-                  <div className="card-title"><span className="dot" style={{ background: "var(--c-lqr)" }} /><h3 style={{ margin: 0 }}>straight_lqr</h3></div>
-                  <div className="formula" style={{ marginBottom: 10 }}>K1={r(tune.straightLqr.params.K1!, 2)}, K2={r(tune.straightLqr.params.K2!, 3)}</div>
-                  <BeforeAfter
-                    rows={[
-                      { k: t("robot.lateral") + " (1 m)", before: `${r(tune.straightLqr.before.lateral, 1)} mm`, after: `${r(tune.straightLqr.after.lateral, 1)} mm`, better: tune.straightLqr.after.lateral < tune.straightLqr.before.lateral },
-                      { k: t("robot.headingErr"), before: `${r(tune.straightLqr.before.heading, 2)}°`, after: `${r(tune.straightLqr.after.heading, 2)}°`, better: tune.straightLqr.after.heading <= tune.straightLqr.before.heading },
-                    ]}
-                  />
-                  <button className="btn" style={{ marginTop: 12 }} onClick={() => apply("straight")} disabled={applied.straight}>
-                    {applied.straight ? <Check size={16} /> : <Wand2 size={16} />} {applied.straight ? t("common.applied") : t("robot.applyStraight")}
-                  </button>
+                  <h3>{t("robot.straightTitle")}</h3>
+                  <table className="data">
+                    <thead><tr><th></th><th className="num">{t("robot.lateral")}</th><th className="num">{t("compare.distErr")}</th><th className="num">{t("robot.headingErr")}</th></tr></thead>
+                    <tbody>
+                      {(["lqr", "pid", "gyro"] as const).map((k) => (
+                        <tr key={k}>
+                          <td><span className="row" style={{ gap: 8 }}><span className="dot" style={{ background: `var(--c-${k})` }} />{k.toUpperCase()}</span></td>
+                          <td className="num">{r(tune.straight[k].lateral, 1)} mm</td>
+                          <td className="num">{r(tune.straight[k].dist, 1)} mm</td>
+                          <td className="num">{r(tune.straight[k].heading, 2)}°</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>

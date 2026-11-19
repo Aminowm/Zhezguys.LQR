@@ -334,8 +334,8 @@ export const en = {
 
   "compare.gainsTypical": "As usually used",
   "compare.hintTypical": "LQR takes its gains from your robot's model (that is how LQR works). PID and the Pybricks gyro run exactly as written in your code.",
-  "compare.hintCode": "All three run exactly as written in your code.",
-  "compare.hintTuned": "All three are auto-tuned for this robot in the simulator first — the fairest test of each method's best.",
+  "compare.hintCode": "Exactly as in your code. LQR always takes its gains from your robot model; PID and the gyro use the numbers written in pid.py and config.py.",
+  "compare.hintTuned": "PID gains and the gyro turn rate are first auto-tuned for this robot — the fairest test of each method at its best.",
   "compare.accTurn": "Accuracy over 6 turns",
   "compare.accStraight": "Side drift over 4 distances",
   "compare.accHint": "Average error after the robot stops (bar), worst case (line) and average time. Lower is better.",
@@ -381,6 +381,12 @@ export const en = {
   "landing.whiteTitle": "Champion-level turns",
   "landing.whiteText": "Build your robot in 3D, let the site compute LQR gains for its exact weight, then plan every BIOGLOW run on a real-size table.",
   "landing.whiteStat": "LQR final error on a 90° turn",
+
+  "robot.lqrModel": "LQR does not need guessing: config.py holds your robot's model (the site rewrites it whenever you change the 3D robot) and lqr.py solves the Riccati equation on the hub.",
+  "robot.lqrAuto": "Dashed lines: PID and the Pybricks gyro exactly as in your code, on the same robot.",
+  "robot.meanErr": "Average final error",
+  "robot.straightTitle": "Driving straight (600 and 1200 mm, NORMAL)",
+  "compare.oldCode": "Your code still uses the old functions (turn_lqr …), so the comparison uses the new starter library with your robot. Reset the files on the Code page to switch.",
 };
 
 export type Dict = typeof en;
