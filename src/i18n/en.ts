@@ -335,7 +335,7 @@ export const en = {
   "compare.hintCode": "Exactly as in your code. LQR always takes its gains from your robot model; PID and the gyro use the numbers written in pid.py and config.py.",
   "compare.hintTuned": "PID gains and the gyro turn rate are first auto-tuned for this robot — the fairest test of each method at its best.",
   "compare.accTurn": "Accuracy over 6 turns",
-  "compare.accStraight": "Side drift over 4 distances",
+  "compare.accStraight": "End-point error over 4 distances (distance + side drift)",
   "compare.accHint": "Average error after the robot stops (bar), worst case (line) and average time. Lower is better.",
   "compare.maxErr": "worst",
 

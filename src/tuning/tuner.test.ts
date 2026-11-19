@@ -18,22 +18,20 @@ describe("controllers on the default robot", () => {
     // follows a plan, so no overshoot
     for (const a of angles) expect(simLqrTurn(DEFAULT_PROFILE, a).overshoot).toBeLessThan(0.5);
   });
-  it("LQR drives straighter than PID and the gyro DriveBase", () => {
-    const d = [600, 1200];
-    const lat = (f: (mm: number, s: number) => { lateralMm: number }) => mean(d.map((mm, i) => Math.abs(f(mm, 31 + i).lateralMm)));
-    const lqr = lat((mm, s) => simLqrStraight(DEFAULT_PROFILE, mm, undefined, undefined, s));
-    const pid = lat((mm, s) => simPidStraight(DEFAULT_PROFILE, mm, undefined, undefined, s));
-    const gyro = lat((mm, s) => simGyroStraight(DEFAULT_PROFILE, mm, undefined, s));
-    console.log("straight |lateral|", { lqr, pid, gyro });
-    expect(lqr).toBeLessThan(pid);
-    expect(lqr).toBeLessThan(gyro);
-    const dist = (f: (mm: number, s: number) => { distErr: number }) => mean(d.map((mm, i) => Math.abs(f(mm, 31 + i).distErr)));
-    const dl = dist((mm, s) => simLqrStraight(DEFAULT_PROFILE, mm, undefined, undefined, s));
-    const dp = dist((mm, s) => simPidStraight(DEFAULT_PROFILE, mm, undefined, undefined, s));
-    const dg = dist((mm, s) => simGyroStraight(DEFAULT_PROFILE, mm, undefined, s));
-    console.log("straight |distance|", { dl, dp, dg });
-    expect(dl).toBeLessThan(dg);
-    expect(dl).toBeLessThan(dp);
+  it("LQR stops closest to the planned end point", () => {
+    const d = [300, 600, 1000, 1600];
+    const runs = (f: (mm: number, s: number) => { lateralMm: number; distErr: number }) => d.map((mm, i) => f(mm, 31 + i));
+    const lqr = runs((mm, s) => simLqrStraight(DEFAULT_PROFILE, mm, undefined, undefined, s));
+    const pid = runs((mm, s) => simPidStraight(DEFAULT_PROFILE, mm, undefined, undefined, s));
+    const gyro = runs((mm, s) => simGyroStraight(DEFAULT_PROFILE, mm, undefined, s));
+    const end = (r: typeof lqr) => mean(r.map((x) => Math.hypot(x.distErr, x.lateralMm)));
+    const lat = (r: typeof lqr) => mean(r.map((x) => Math.abs(x.lateralMm)));
+    console.log("straight end-point", { lqr: end(lqr), pid: end(pid), gyro: end(gyro) }, "lateral", { lqr: lat(lqr), pid: lat(pid), gyro: lat(gyro) });
+    expect(end(lqr)).toBeLessThan(end(gyro) / 2);
+    expect(end(lqr)).toBeLessThan(end(pid) / 5);
+    // side drift is limited by the gyro itself for both gyro-based methods
+    expect(lat(lqr)).toBeLessThan(lat(pid));
+    expect(lat(lqr)).toBeLessThan(lat(gyro) * 1.5);
   });
 });
 

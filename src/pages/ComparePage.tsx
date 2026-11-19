@@ -137,7 +137,8 @@ export default function ComparePage() {
         const out = outs[main.length + i];
         const f = out.frames;
         const n = f.t.length - 1;
-        const err = isTurn ? Math.abs(f.h[n] - f.h[0] - p.target) : Math.abs(f.y[n] - f.y[0]);
+        // turns: heading error; straight: how far the robot stopped from the planned end point
+        const err = isTurn ? Math.abs(f.h[n] - f.h[0] - p.target) : Math.hypot(f.x[n] - f.x[0] - p.target, f.y[n] - f.y[0]);
         const r = acc.get(p.id) ?? { id: p.id, label: p.label, color: p.color, mean: 0, max: 0, ms: 0, n: 0 };
         r.mean += err;
         r.max = Math.max(r.max, err);
