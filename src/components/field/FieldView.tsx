@@ -387,17 +387,17 @@ const FieldView = forwardRef<FieldHandle, Props>(function FieldView(p, ref) {
             {segs.map((s, i) => (
               <g key={i}>
                 <polygon points={arrowHead(s.mx - Math.cos((s.ang * Math.PI) / 180) * 20, s.my - Math.sin((s.ang * Math.PI) / 180) * 20, s.mx, s.my, 22 + sw)} fill={it.color} />
-                <text x={s.mx} y={s.my - 22} textAnchor="middle" fontSize="28" fontWeight="600" fill="var(--ink)" style={{ paintOrder: "stroke", stroke: "var(--surface)", strokeWidth: 8 }} className="num">
+                <text x={s.mx} y={s.my - 22} textAnchor="middle" fontSize="28" fontWeight="600" fill="var(--ink)" style={{ paintOrder: "stroke", stroke: "var(--surface-solid)", strokeWidth: 8 }} className="num">
                   {Math.round(s.mm)} mm
                 </text>
               </g>
             ))}
             {it.points.map((q, i) => (
-              <circle key={i} cx={q[0]} cy={q[1]} r={i === 0 ? 14 : 11} fill={i === 0 ? it.color : "var(--surface)"} stroke={it.color} strokeWidth="5" />
+              <circle key={i} cx={q[0]} cy={q[1]} r={i === 0 ? 14 : 11} fill={i === 0 ? it.color : "var(--surface-solid)"} stroke={it.color} strokeWidth="5" />
             ))}
             {turns.map((tn, i) =>
               Math.abs(tn.deg) >= 1 ? (
-                <text key={"t" + i} x={tn.x + 18} y={tn.y + 40} fontSize="26" fontWeight="600" fill={it.color} style={{ paintOrder: "stroke", stroke: "var(--surface)", strokeWidth: 8 }} className="num">
+                <text key={"t" + i} x={tn.x + 18} y={tn.y + 40} fontSize="26" fontWeight="600" fill={it.color} style={{ paintOrder: "stroke", stroke: "var(--surface-solid)", strokeWidth: 8 }} className="num">
                   {tn.deg > 0 ? "+" : "−"}{Math.abs(Math.round(tn.deg))}°
                 </text>
               ) : null,
@@ -429,7 +429,7 @@ const FieldView = forwardRef<FieldHandle, Props>(function FieldView(p, ref) {
               fontSize={fs}
               fontWeight="700"
               fill={it.color}
-              style={{ paintOrder: "stroke", stroke: it.color === "#ffffff" ? "#1b2420" : "var(--surface)", strokeWidth: fs * 0.22, strokeLinejoin: "round", cursor: p.tool === "select" ? "move" : undefined }}
+              style={{ paintOrder: "stroke", stroke: it.color === "#ffffff" ? "#1b2420" : "var(--surface-solid)", strokeWidth: fs * 0.22, strokeLinejoin: "round", cursor: p.tool === "select" ? "move" : undefined }}
               onPointerDown={itemDown(it)}
               onPointerEnter={itemEnter(it)}
               onDoubleClick={(e) => {
@@ -457,7 +457,7 @@ const FieldView = forwardRef<FieldHandle, Props>(function FieldView(p, ref) {
                 cx={hx}
                 cy={hy}
                 r="20"
-                fill="var(--surface)"
+                fill="var(--surface-solid)"
                 stroke="var(--ink)"
                 strokeWidth="5"
                 style={{ cursor: "grab" }}
@@ -497,10 +497,10 @@ const FieldView = forwardRef<FieldHandle, Props>(function FieldView(p, ref) {
         <g opacity="0.85">
           <path d={draft.map((q, i) => (i ? "L" : "M") + q[0] + "," + q[1]).join("")} fill="none" stroke={p.color} strokeWidth={sw} strokeDasharray={`${sw * 4} ${sw * 2}`} />
           {draft.slice(0, -1).map((q, i) => (
-            <circle key={i} cx={q[0]} cy={q[1]} r="11" fill="var(--surface)" stroke={p.color} strokeWidth="5" />
+            <circle key={i} cx={q[0]} cy={q[1]} r="11" fill="var(--surface-solid)" stroke={p.color} strokeWidth="5" />
           ))}
           {segs.length > 0 && (
-            <text x={segs[segs.length - 1].mx} y={segs[segs.length - 1].my - 22} textAnchor="middle" fontSize="28" fontWeight="600" fill="var(--ink)" style={{ paintOrder: "stroke", stroke: "var(--surface)", strokeWidth: 8 }} className="num">
+            <text x={segs[segs.length - 1].mx} y={segs[segs.length - 1].my - 22} textAnchor="middle" fontSize="28" fontWeight="600" fill="var(--ink)" style={{ paintOrder: "stroke", stroke: "var(--surface-solid)", strokeWidth: 8 }} className="num">
               {Math.round(segs[segs.length - 1].mm)} mm
             </text>
           )}
@@ -569,7 +569,7 @@ const FieldView = forwardRef<FieldHandle, Props>(function FieldView(p, ref) {
             {active && p.tool === "select" && (
               <g>
                 <line x1={s.x} y1={s.y} x2={hx} y2={hy} stroke={pr.color} strokeWidth="4" strokeDasharray="8 8" />
-                <circle cx={hx} cy={hy} r="20" fill="var(--surface)" stroke={pr.color} strokeWidth="6" style={{ cursor: "grab" }} onPointerDown={rotateDown(pr)} />
+                <circle cx={hx} cy={hy} r="20" fill="var(--surface-solid)" stroke={pr.color} strokeWidth="6" style={{ cursor: "grab" }} onPointerDown={rotateDown(pr)} />
               </g>
             )}
           </g>

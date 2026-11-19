@@ -8,8 +8,8 @@ import { tags } from "@lezer/highlight";
 
 const theme = EditorView.theme({
   "&": { backgroundColor: "var(--surface)", color: "var(--ink)" },
-  ".cm-content": { fontFamily: "var(--mono)", caretColor: "var(--primary)" },
-  ".cm-cursor": { borderLeftColor: "var(--primary)", borderLeftWidth: "2px" },
+  ".cm-content": { fontFamily: "var(--mono)", caretColor: "var(--accent)" },
+  ".cm-cursor": { borderLeftColor: "var(--accent)", borderLeftWidth: "2px" },
   "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": {
     backgroundColor: "color-mix(in srgb, var(--primary) 22%, transparent) !important",
   },
@@ -19,13 +19,13 @@ const theme = EditorView.theme({
 });
 
 const highlight = HighlightStyle.define([
-  { tag: [tags.keyword, tags.controlKeyword, tags.definitionKeyword, tags.operatorKeyword], color: "var(--c-gyro)", fontWeight: "500" },
-  { tag: [tags.function(tags.variableName), tags.function(tags.definition(tags.variableName))], color: "var(--primary)" },
-  { tag: [tags.number, tags.bool, tags.null], color: "var(--c-pid)" },
-  { tag: [tags.string], color: "#4d7c0f" },
-  { tag: [tags.comment, tags.lineComment], color: "var(--muted)", fontStyle: "italic" },
-  { tag: [tags.className], color: "#be185d" },
-  { tag: [tags.propertyName], color: "var(--ink-2)" },
+  { tag: [tags.keyword, tags.controlKeyword, tags.definitionKeyword, tags.operatorKeyword], color: "var(--syn-kw)", fontWeight: "500" },
+  { tag: [tags.function(tags.variableName), tags.function(tags.definition(tags.variableName))], color: "var(--syn-fn)" },
+  { tag: [tags.number, tags.bool, tags.null], color: "var(--syn-num)" },
+  { tag: [tags.string], color: "var(--syn-str)" },
+  { tag: [tags.comment, tags.lineComment], color: "var(--syn-comment)", fontStyle: "italic" },
+  { tag: [tags.className], color: "var(--syn-class)" },
+  { tag: [tags.propertyName], color: "var(--syn-prop)" },
 ]);
 
 function errorLineExt(line: number | null | undefined) {

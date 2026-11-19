@@ -162,7 +162,7 @@ export default function LineChart({ series, height = 240, xLabel, yUnit, refY, t
         {series.map((s) =>
           s.y.length ? (
             <g key={"e" + s.id}>
-              <circle cx={sx(s.x[s.x.length - 1])} cy={sy(s.y[s.y.length - 1])} r="4" fill={s.color} stroke="var(--surface)" strokeWidth="2" />
+              <circle cx={sx(s.x[s.x.length - 1])} cy={sy(s.y[s.y.length - 1])} r="4" fill={s.color} stroke="var(--surface-solid)" strokeWidth="2" />
               {shown.has(s.id) && (
                 <text x={sx(s.x[s.x.length - 1]) + 8} y={sy(s.y[s.y.length - 1]) + 4} fontSize="11" fill="var(--ink-2)">
                   {s.label} {fy(s.y[s.y.length - 1])}
@@ -175,7 +175,7 @@ export default function LineChart({ series, height = 240, xLabel, yUnit, refY, t
           <g pointerEvents="none">
             <line x1={sx(hx)} x2={sx(hx)} y1={m.t} y2={H - m.b} stroke="var(--ink-2)" strokeWidth="1" opacity="0.5" />
             {tip!.map(({ s, v }) => (
-              <circle key={s.id} cx={sx(hx)} cy={sy(v)} r="4" fill={s.color} stroke="var(--surface)" strokeWidth="2" />
+              <circle key={s.id} cx={sx(hx)} cy={sy(v)} r="4" fill={s.color} stroke="var(--surface-solid)" strokeWidth="2" />
             ))}
           </g>
         )}

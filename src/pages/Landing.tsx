@@ -59,7 +59,12 @@ export default function Landing() {
     { icon: <Lock size={20} />, t: t("landing.f4t"), d: t("landing.f4d") },
   ];
   const lqr = stats.find((s) => s.id === "lqr");
-  const [w1, ...rest] = t("landing.title").split(" ");
+  // first sentence in white, the rest glows lime
+  const title = t("landing.title");
+  const cut = title.indexOf(". ");
+  const w1 = cut > 0 ? title.slice(0, cut + 1) : title.split(" ")[0];
+  const rest = cut > 0 ? title.slice(cut + 2) : title.split(" ").slice(1).join(" ");
+  const reveal = { initial: { opacity: 0, y: 28 }, whileInView: { opacity: 1, y: 0 }, viewport: { once: true, amount: 0.15 }, transition: { duration: 0.6, ease: [0.22, 1, 0.36, 1] as const } };
 
   return (
     <main className="ed">
@@ -72,9 +77,9 @@ export default function Landing() {
 
       <section className="ed-hero">
         <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45 }}>
-          <div className="eyebrow">{t("landing.eyebrow")}</div>
+          <div className="eyebrow"><span className="pulse-dot" aria-hidden />{t("landing.eyebrow")}</div>
           <h1 className="ed-title">
-            {w1} <span className="sky">{rest.join(" ")}</span>
+            {w1} <span className="sky">{rest}</span>
           </h1>
           <p className="ed-lead">{t("landing.lead")}</p>
           <div className="row wrap" style={{ marginTop: 22, gap: 10 }}>
@@ -130,7 +135,7 @@ export default function Landing() {
         </motion.div>
       </section>
 
-      <section className="ed-section">
+      <motion.section className="ed-section" {...reveal}>
         <header>
           <span className="ed-no">02</span>
           <h2>{t("landing.whiteTitle")}</h2>
@@ -149,9 +154,9 @@ export default function Landing() {
             ))}
           </div>
         </div>
-      </section>
+      </motion.section>
 
-      <section className="ed-section">
+      <motion.section className="ed-section" {...reveal}>
         <header>
           <span className="ed-no">03</span>
           <h2>{t("landing.howTitle")}</h2>
@@ -170,22 +175,22 @@ export default function Landing() {
               <div className="muted tiny">{t("landing.fCost")}</div>
               J = ∫ (e²/e_max² + ω²/ω_max² + u²/u_max²) dt
             </div>
-            <div className="formula" style={{ background: "var(--sky)", color: "var(--sky-ink)", borderColor: "transparent" }}>
-              <div className="tiny" style={{ opacity: 0.75 }}>lqr_turn()</div>
+            <div className="formula" style={{ borderColor: "var(--accent)", boxShadow: "0 0 24px -10px rgba(178, 246, 1, 0.6)" }}>
+              <div className="tiny muted">lqr_turn()</div>
               u = K1·e − K2·ω + Ki·∫e + u₀·e/(|e|+0.3)
             </div>
           </div>
         </div>
-      </section>
+      </motion.section>
 
-      <section className="ed-cta">
+      <motion.section className="ed-cta" {...reveal}>
         <div>
           <span className="ed-no">04</span>
           <h2>{t("landing.ctaRegister")}</h2>
           <p style={{ margin: "10px 0 0", maxWidth: 560 }}>{t("landing.f4d")}</p>
         </div>
         <Link to="/register" className="btn primary lg">{t("nav.register")} <ArrowUpRight size={18} /></Link>
-      </section>
+      </motion.section>
 
       <footer className="footer" style={{ marginTop: 26, paddingLeft: 0, paddingRight: 0 }}>
         <div className="row spread wrap">

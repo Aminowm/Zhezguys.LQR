@@ -68,7 +68,7 @@ function PartMesh({ p, b, selected, onDown, onMove, onUp }: {
         <mesh>
           <boxGeometry args={[p.wid + 1.5, h + 1.5, p.len + 1.5]} />
           <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-          <Edges threshold={15} color="#1d6fd8" lineWidth={2.5} />
+          <Edges threshold={15} color="#B2F601" lineWidth={2.5} />
         </mesh>
       )}
     </group>
@@ -130,8 +130,8 @@ export default function Robot3D({ value: b, onChange, selected, onSelect, dark }
       <Environment resolution={256} frames={1}>
         <Lightformer form="rect" intensity={2.2} position={[0, 6, 2]} scale={[10, 4, 1]} rotation={[Math.PI / 2.2, 0, 0]} />
         <Lightformer form="rect" intensity={1.4} position={[-6, 2, 4]} scale={[6, 3, 1]} rotation={[0, -Math.PI / 4, 0]} />
-        <Lightformer form="rect" intensity={1.1} position={[6, 2, -4]} scale={[6, 3, 1]} rotation={[0, Math.PI * 0.75, 0]} color="#dbe9ff" />
-        <Lightformer form="ring" intensity={0.8} position={[0, 3, -8]} scale={4} color="#fff4e2" />
+        <Lightformer form="rect" intensity={1.3} position={[6, 2, -4]} scale={[6, 3, 1]} rotation={[0, Math.PI * 0.75, 0]} color="#62C0F6" />
+        <Lightformer form="ring" intensity={0.5} position={[0, 3, -8]} scale={4} color="#B2F601" />
       </Environment>
       <ambientLight intensity={0.15} />
       <directionalLight position={[220, 420, 160]} intensity={1.1} castShadow shadow-mapSize={[1024, 1024]} shadow-bias={-0.0004} shadow-camera-left={-300} shadow-camera-right={300} shadow-camera-top={300} shadow-camera-bottom={-300} />
@@ -141,20 +141,20 @@ export default function Robot3D({ value: b, onChange, selected, onSelect, dark }
         position={[0, -0.3, 0]}
         cellSize={8}
         cellThickness={0.5}
-        cellColor={dark ? "#2b3a5c" : "#d9e3ef"}
+        cellColor={dark ? "#23384d" : "#d5dee8"}
         sectionSize={40}
         sectionThickness={0.9}
-        sectionColor={dark ? "#3f5785" : "#a9c3dd"}
+        sectionColor={dark ? "#2f6f95" : "#9ec3dd"}
         fadeDistance={900}
         fadeStrength={1.5}
         infiniteGrid
       />
-      <ContactShadows position={[0, 0.05, 0]} scale={700} resolution={1024} blur={2.2} far={180} opacity={dark ? 0.7 : 0.42} color="#0b1a33" />
+      <ContactShadows position={[0, 0.05, 0]} scale={700} resolution={1024} blur={2.2} far={180} opacity={dark ? 0.75 : 0.4} color="#05070c" />
 
       {/* forward arrow on the floor */}
       <mesh position={[0, 0.5, -(stats.axleToFrontMm + 40)]} rotation={[-Math.PI / 2, 0, Math.PI]}>
         <coneGeometry args={[14, 30, 3]} />
-        <meshBasicMaterial color="#2c7be5" />
+        <meshBasicMaterial color="#62C0F6" />
       </mesh>
 
       {/* drive wheels */}
@@ -183,11 +183,11 @@ export default function Robot3D({ value: b, onChange, selected, onSelect, dark }
       <group position={[stats.com.y, stats.com.z, -stats.com.x]}>
         <mesh>
           <sphereGeometry args={[6, 20, 14]} />
-          <meshBasicMaterial color="#0b1f6e" depthTest={false} transparent opacity={0.95} />
+          <meshBasicMaterial color={dark ? "#B2F601" : "#161822"} depthTest={false} transparent opacity={0.95} />
         </mesh>
         <mesh position={[0, -stats.com.z / 2, 0]}>
           <cylinderGeometry args={[0.8, 0.8, stats.com.z, 6]} />
-          <meshBasicMaterial color="#0b1f6e" depthTest={false} transparent opacity={0.5} />
+          <meshBasicMaterial color={dark ? "#B2F601" : "#161822"} depthTest={false} transparent opacity={0.5} />
         </mesh>
       </group>
     </Canvas>
